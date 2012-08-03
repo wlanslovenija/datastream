@@ -16,7 +16,7 @@ if __name__ == '__main__':
         author_email = 'open@wlan-si.net',
         url = 'https://github.com/wlanslovenija/datastream',
         license = 'AGPLv3',
-        packages = find_packages(),
+        packages = find_packages(exclude=('*.tests', '*.tests.*', 'tests.*', 'tests')),
         package_data = {},
         classifiers = [
             'Development Status :: 4 - Beta',
@@ -31,4 +31,5 @@ if __name__ == '__main__':
             'mongoengine>=0.6.18',
             'pymongo>=2.2.1',
         ],
+        test_suite = 'tests',
     )

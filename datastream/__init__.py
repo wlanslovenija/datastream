@@ -1,3 +1,3 @@
 from __future__ import absolute_import
 
-from .api import Datastream, GRANULARITIES
+from .api import Datastream, GRANULARITIES, Metric

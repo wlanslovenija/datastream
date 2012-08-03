@@ -17,6 +17,8 @@ DOWNSAMPLERS = (
     'count',
 )
 
+DATABASE_ALIAS = 'datastream'
+
 # The largest integer that can be stored in MongoDB; larger values need to use floats
 MAXIMUM_INTEGER = 2**63 - 1
 
@@ -28,7 +30,7 @@ class DownsampleState(mongoengine.EmbeddedDocument):
     )
 
 class Metric(mongoengine.Document):
-    id = mongoengine.SequenceField(primary_key = True, db_alias = 'datastream')
+    id = mongoengine.SequenceField(primary_key = True, db_alias = DATABASE_ALIAS)
     external_id = mongoengine.UUIDField()
     downsamplers = mongoengine.ListField(mongoengine.StringField(choices = DOWNSAMPLERS))
     downsample_state = mongoengine.MapField(mongoengine.EmbeddedDocumentField(DownsampleState))
@@ -37,7 +39,7 @@ class Metric(mongoengine.Document):
     tags = mongoengine.ListField(mongoengine.DynamicField())
 
     meta = dict(
-        db_alias = 'datastream',
+        db_alias = DATABASE_ALIAS,
         collection = 'metrics',
         indexes = ('tags', 'external_id'),
         allow_inheritance = False,
@@ -203,7 +205,7 @@ class Backend(object):
         """
 
         # Setup the database connection to MongoDB
-        mongoengine.connect(database_name, 'datastream', **connection_settings)
+        mongoengine.connect(database_name, DATABASE_ALIAS, **connection_settings)
 
         self.downsamplers = (
             ('count',       Downsamplers.Count),
@@ -216,7 +218,7 @@ class Backend(object):
         )
 
         # Ensure indices on datapoints collections
-        db = mongoengine.connection.get_db('datastream')
+        db = mongoengine.connection.get_db(DATABASE_ALIAS)
         for granularity in api.GRANULARITIES:
             collection = getattr(db.datapoints, granularity)
             collection.ensure_index([
@@ -381,7 +383,7 @@ class Backend(object):
             raise exceptions.MetricNotFound
 
         # Insert the datapoint into appropriate granularity
-        db = mongoengine.connection.get_db('datastream')
+        db = mongoengine.connection.get_db(DATABASE_ALIAS)
         collection = getattr(db.datapoints, metric.highest_granularity)
         id = collection.insert({ 'm' : metric.id, 'v' : value })
 
@@ -415,7 +417,7 @@ class Backend(object):
             raise exceptions.UnsupportedGranularity
 
         # Get the datapoints
-        db = mongoengine.connection.get_db('datastream')
+        db = mongoengine.connection.get_db(DATABASE_ALIAS)
         collection = getattr(db.datapoints, granularity)
         pts = collection.find({
             '_id' : {
@@ -508,7 +510,7 @@ class Backend(object):
         :param current_timestamp: Timestamp of the last inserted datapoint
         """
 
-        db = mongoengine.connection.get_db('datastream')
+        db = mongoengine.connection.get_db(DATABASE_ALIAS)
 
         # Determine the interval that needs downsampling
         datapoints = getattr(db.datapoints, metric.highest_granularity)
