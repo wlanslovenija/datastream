@@ -1,7 +1,7 @@
 import datetime, struct, time, uuid
 
 import pymongo
-from pymongo import objectid
+from bson import objectid
 
 import mongoengine
 
