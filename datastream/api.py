@@ -89,7 +89,7 @@ class Datastream(object):
 
         return self.backend.get_data(metric_id, granularity, start, end)
 
-    def downsample_metrics(self, query_tags):
+    def downsample_metrics(self, query_tags=None):
         """
         Requests the backend to downsample all metrics matching the specified
         query tags.

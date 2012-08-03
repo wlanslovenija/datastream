@@ -331,7 +331,7 @@ class Backend(object):
 
         Metric.objects(external_id = metric_id).update(tags = list(self._process_tags(tags)))
 
-    def _get_metric_queryset(self, query_tags=None):
+    def _get_metric_queryset(self, query_tags):
         """
         Returns a queryset that matches the specified metric tags.
 
@@ -425,7 +425,7 @@ class Backend(object):
 
         return [{ 't' : x['_id'].generation_time, 'v' : x['v'] } for x in pts]
 
-    def downsample_metrics(self, query_tags):
+    def downsample_metrics(self, query_tags=None):
         """
         Requests the backend to downsample all metrics matching the specified
         query tags.
