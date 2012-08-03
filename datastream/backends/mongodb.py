@@ -63,13 +63,13 @@ class Downsamplers:
         key = None
 
         def init(self):
-            raise NotImplementedError
+            pass
 
         def update(self, datum):
-            raise NotImplementedError
+            pass
 
         def finish(self, output):
-            raise NotImplementedError
+            pass
 
     class Count(Base):
         """
