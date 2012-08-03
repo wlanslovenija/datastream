@@ -192,7 +192,7 @@ class Downsamplers:
             values[self.key] = (n * ss - s**2) / (n * (n - 1))
 
 class Backend(object):
-    def __init__(self, database_name, connection_settings={}):
+    def __init__(self, database_name, **connection_settings):
         """
         Initializes the MongoDB backend.
 
