@@ -17,6 +17,9 @@ DOWNSAMPLERS = (
     'count',
 )
 
+# The largest integer that can be stored in MongoDB; larger values need to use floats
+MAXIMUM_INTEGER = 2**63 - 1
+
 class DownsampleState(mongoengine.EmbeddedDocument):
     timestamp = mongoengine.DateTimeField()
 
@@ -103,8 +106,7 @@ class Downsamplers:
 
         def finish(self, output):
             assert self.key not in output
-            # TODO: Should we do float here? Shouldn't we sum integers and floats differently? We should anyway do some type checking because not all datapoint types can do all downsamplers.
-            output[self.key] = float(self.sum)
+            output[self.key] = float(self.sum) if self.sum > MAXIMUM_INTEGER else self.sum
 
     class SumSquares(Base):
         """
@@ -121,7 +123,7 @@ class Downsamplers:
 
         def finish(self, output):
             assert self.key not in output
-            output[self.key] = float(self.sum)
+            output[self.key] = float(self.sum) if self.sum > MAXIMUM_INTEGER else self.sum
 
     class Min(Base):
         """
