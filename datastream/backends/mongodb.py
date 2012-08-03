@@ -217,10 +217,10 @@ class Backend(object):
         db = mongoengine.connection.get_db('datastream')
         for granularity in api.GRANULARITIES:
             collection = getattr(db.datapoints, granularity)
-            collection.ensure_index((
+            collection.ensure_index([
                 ('_id', pymongo.ASCENDING),
                 ('m', pymongo.ASCENDING),
-            ))
+            ])
 
     def _process_tags(self, tags):
         """
@@ -331,13 +331,16 @@ class Backend(object):
 
         Metric.objects(external_id = metric_id).update(tags = list(self._process_tags(tags)))
 
-    def _get_metric_queryset(self, query_tags):
+    def _get_metric_queryset(self, query_tags=None):
         """
         Returns a queryset that matches the specified metric tags.
 
         :param query_tags: Tags that should be matched to metrics
         :return: A filtered queryset
         """
+
+        if query_tags is None:
+            query_tags = []
 
         query_set = Metric.objects.all()
         for tag in query_tags[:]:
@@ -351,7 +354,7 @@ class Backend(object):
         else:
             return query_set.filter(tags__all = query_tags)
 
-    def find_metrics(self, query_tags):
+    def find_metrics(self, query_tags=None):
         """
         Finds all metrics matching the specified query tags.
 

@@ -56,7 +56,7 @@ class Datastream(object):
 
         return self.backend.update_tags(metric_id, tags)
 
-    def find_metrics(self, query_tags):
+    def find_metrics(self, query_tags=None):
         """
         Finds all metrics matching the specified query tags.
 
