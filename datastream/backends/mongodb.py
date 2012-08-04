@@ -25,8 +25,11 @@ class Downsamplers(object):
         name = None
         key = None
 
-        def init(self):
+        def __init__(self):
             self.key = api.DOWNSAMPLERS[self.name]
+
+        def init(self):
+            pass
 
         def update(self, datum):
             pass
