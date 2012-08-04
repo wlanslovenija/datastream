@@ -386,7 +386,7 @@ class Backend(object):
         # Insert the datapoint into appropriate granularity
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
         collection = getattr(db.datapoints, metric.highest_granularity.name)
-        id = collection.insert({ 'm' : metric.id, 'v' : value })
+        id = collection.insert({ 'm' : metric.id, 'v' : value }, safe = True)
 
         # Check if we need to perform any downsampling
         if id is not None and not metric.downsample_needed:
@@ -551,6 +551,7 @@ class Backend(object):
                     { '_id' : point_id, 'm' : metric.id },
                     { '_id' : point_id, 'm' : metric.id, 'v' : value },
                     upsert = True,
+                    safe = True,
                 )
 
             last_timestamp = rounded_timestamp
