@@ -1,4 +1,4 @@
-import datetime, unittest
+import datetime, time, unittest
 
 import mongoengine
 
@@ -25,13 +25,13 @@ class BasicTest(object):
         # Should not do anything
         self.datastream.downsample_metrics()
 
-        data = self.datastream.get_data(metric_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.now())
+        data = self.datastream.get_data(metric_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
         self.assertItemsEqual(data, [])
 
         self.datastream.insert(metric_id, 42)
         self.datastream.downsample_metrics()
 
-        data = self.datastream.get_data(metric_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.now())
+        data = self.datastream.get_data(metric_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
         self.assertEqual(len(data), 1)
 
 class MongoDBBasicTest(BasicTest, unittest.TestCase):

@@ -417,10 +417,13 @@ class Backend(object):
         # Get the datapoints
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
         collection = getattr(db.datapoints, granularity.name)
+        # We add one second here and use strict less-than bellow to cover all
+        # possible ObjectId values in a given "end" timestamp
+        end += datetime.timedelta(seconds = 1)
         pts = collection.find({
             '_id' : {
                 '$gte' : objectid.ObjectId.from_datetime(start),
-                '$lte' : objectid.ObjectId.from_datetime(end),
+                '$lt' : objectid.ObjectId.from_datetime(end),
             },
             'm' : metric.id,
         }).sort('_id')
