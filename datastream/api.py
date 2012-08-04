@@ -11,10 +11,17 @@ class Granularity(object):
             def __lt__(self, other):
                 return self._order < other._order
 
+            def __str__(self):
+                return self.__name__.lower()
+
         __metaclass__ = _BaseMetaclass
 
         @utils.class_property
         def name(cls):
+            return cls.__name__.lower()
+
+        @classmethod
+        def __str__(cls):
             return cls.__name__.lower()
 
     class Seconds(_Base):
@@ -34,6 +41,9 @@ class Granularity(object):
         if not hasattr(cls, '_values'):
             cls._values = tuple(sorted([getattr(cls, name) for name in cls.__dict__ if name != 'values' and inspect.isclass(getattr(cls, name)) and getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)], reverse=True))
         return cls._values
+
+# We want initial letters to be unique
+assert len(set(granularity.name.lower()[0] for granularity in Granularity.values)) == len(Granularity.values)
 
 RESERVED_TAGS = (
     'metric_id',
