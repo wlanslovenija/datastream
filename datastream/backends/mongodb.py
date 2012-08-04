@@ -392,14 +392,14 @@ class Backend(object):
         if id is not None and not metric.downsample_needed:
             self._downsample_check(metric, id.generation_time)
 
-    def get_data(self, metric_id, granularity, start, end):
+    def get_data(self, metric_id, granularity, start, end=None):
         """
         Retrieves data from a certain time range and of a certain granularity.
 
         :param metric_id: Metric identifier
         :param granularity: Wanted granularity
         :param start: Time range start
-        :param end: Time range end
+        :param end: Time range end (optional)
         :return: A list of datapoints
         """
 
@@ -417,14 +417,18 @@ class Backend(object):
         # Get the datapoints
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
         collection = getattr(db.datapoints, granularity.name)
-        # We add one second here and use strict less-than bellow to cover all
-        # possible ObjectId values in a given "end" timestamp
-        end += datetime.timedelta(seconds = 1)
-        pts = collection.find({
-            '_id' : {
-                '$gte' : objectid.ObjectId.from_datetime(start),
+        time_query = {
+            '$gte' : objectid.ObjectId.from_datetime(start),
+        }
+        if end is not None:
+            # We add one second and use strict less-than to cover all
+            # possible ObjectId values in a given "end" timestamp
+            end += datetime.timedelta(seconds = 1)
+            time_query.update({
                 '$lt' : objectid.ObjectId.from_datetime(end),
-            },
+            })
+        pts = collection.find({
+            '_id' : time_query,
             'm' : metric.id,
         }).sort('_id')
 

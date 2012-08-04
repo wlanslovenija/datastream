@@ -34,6 +34,9 @@ class BasicTest(object):
         data = self.datastream.get_data(metric_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
         self.assertEqual(len(data), 1)
 
+        data = self.datastream.get_data(metric_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0))
+        self.assertEqual(len(data), 1)
+
 class MongoDBBasicTest(BasicTest, unittest.TestCase):
     database_name = 'test_database'
 

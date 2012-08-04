@@ -137,14 +137,14 @@ class Datastream(object):
 
         return self.backend.insert(metric_id, value)
 
-    def get_data(self, metric_id, granularity, start, end):
+    def get_data(self, metric_id, granularity, start, end=None):
         """
         Retrieves data from a certain time range and of a certain granularity.
 
         :param metric_id: Metric identifier
         :param granularity: Wanted granularity
         :param start: Time range start
-        :param end: Time range end
+        :param end: Time range end (optional)
         :return: A list of datapoints
         """
 
