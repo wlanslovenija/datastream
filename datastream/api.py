@@ -149,7 +149,7 @@ class Datastream(object):
         """
 
         if granularity not in Granularity.values:
-            raise exceptions.UnsupportedGranularity("'granularity' is not a valid value: '%s'" % highest_granularity)
+            raise exceptions.UnsupportedGranularity("'granularity' is not a valid value: '%s'" % granularity)
 
         return self.backend.get_data(metric_id, granularity, start, end)
 
