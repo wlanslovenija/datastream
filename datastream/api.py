@@ -1,15 +1,59 @@
-GRANULARITIES = (
-    'seconds',
-    'minutes',
-    'hours',
-    'days',
-)
+from __future__ import absolute_import
+
+import inspect
+
+from . import exceptions, utils
+
+class Granularity(object):
+    class _Base(object):
+        @utils.total_ordering
+        class _BaseMetaclass(type):
+            def __lt__(self, other):
+                return self._order < other._order
+
+        __metaclass__ = _BaseMetaclass
+
+        @utils.class_property
+        def name(cls):
+            return cls.__name__.lower()
+
+    class Seconds(_Base):
+        _order = 0
+
+    class Minutes(_Base):
+        _order = -1
+
+    class Hours(_Base):
+        _order = -2
+
+    class Days(_Base):
+        _order = -3
+
+    @utils.class_property
+    def values(cls):
+        if not hasattr(cls, '_values'):
+            cls._values = tuple(sorted([getattr(cls, name) for name in cls.__dict__ if name != 'values' and inspect.isclass(getattr(cls, name)) and getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)], reverse=True))
+        return cls._values
 
 RESERVED_TAGS = (
     'metric_id',
     'downsamplers',
     'highest_granularity',
 )
+
+DOWNSAMPLERS = {
+    'mean': 'm', # average of all datapoints
+    'median': 'e', # median of all datapoints
+    'sum': 's', # sum of all datapoints
+    'min': 'l', # minimum value of all dataponts (key mnemonic: l for lower)
+    'max': 'u', # maximum value of all datapoints (key mnemonic: u for upper)
+    'sum_squares': 'q', # sum of squares of all datapoints
+    'std_dev': 'd', # standard deviation of all datapoints
+    'count': 'c', # number of all datapoints
+    'most_often': 'o', # the most often occurring value of all datapoints (key mnemonic: o for often)
+    'least_often': 'r', # the least often occurring value of all datapoints (key mnemonic: r for rare)
+    'frequencies': 'f', # for each value number of occurrences in all datapoints
+}
 
 class Datastream(object):
     def __init__(self, backend):
@@ -33,6 +77,13 @@ class Datastream(object):
             will store, may be used to optimize data storage
         :return: A metric identifier
         """
+
+        if highest_granularity not in Granularity.values:
+            raise exceptions.UnsupportedGranularity("'highest_granularity' is not a valid value: '%s'" % highest_granularity)
+
+        unknown_downsamplers = list(set(downsamplers) - set(DOWNSAMPLERS.keys()))
+        if len(unknown_downsamplers) > 0:
+            raise exceptions.UnknownDownsampler("Unknown downsampler(s): %s" % unknown_downsamplers)
 
         return self.backend.ensure_metric(query_tags, tags, downsamplers, highest_granularity)
 
@@ -86,6 +137,9 @@ class Datastream(object):
         :param end: Time range end
         :return: A list of datapoints
         """
+
+        if granularity not in Granularity.values:
+            raise exceptions.UnsupportedGranularity("'granularity' is not a valid value: '%s'" % highest_granularity)
 
         return self.backend.get_data(metric_id, granularity, start, end)
 

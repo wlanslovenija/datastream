@@ -1,74 +1,32 @@
-import datetime, struct, time, uuid
+import datetime, struct, time, inspect, uuid
 
 import pymongo
 from bson import objectid
 
 import mongoengine
 
-from .. import api, exceptions
-
-DOWNSAMPLERS = (
-    'mean',
-    'sum',
-    'min',
-    'max',
-    'sum_squares',
-    'std_dev',
-    'count',
-)
+from .. import api, exceptions, utils
 
 DATABASE_ALIAS = 'datastream'
 
 # The largest integer that can be stored in MongoDB; larger values need to use floats
 MAXIMUM_INTEGER = 2**63 - 1
 
-class DownsampleState(mongoengine.EmbeddedDocument):
-    timestamp = mongoengine.DateTimeField()
-
-    meta = dict(
-        allow_inheritance = False,
-    )
-
-class Metric(mongoengine.Document):
-    id = mongoengine.SequenceField(primary_key = True, db_alias = DATABASE_ALIAS)
-    external_id = mongoengine.UUIDField()
-    downsamplers = mongoengine.ListField(mongoengine.StringField(choices = DOWNSAMPLERS))
-    downsample_state = mongoengine.MapField(mongoengine.EmbeddedDocumentField(DownsampleState))
-    downsample_needed = mongoengine.BooleanField(default = False)
-    highest_granularity = mongoengine.StringField(choices = api.GRANULARITIES)
-    tags = mongoengine.ListField(mongoengine.DynamicField())
-
-    meta = dict(
-        db_alias = DATABASE_ALIAS,
-        collection = 'metrics',
-        indexes = ('tags', 'external_id'),
-        allow_inheritance = False,
-    )
-
-class hashabledict(dict):
-    def __key(self):
-        return tuple((k, self[k]) for k in sorted(self))
-
-    def __hash__(self):
-        return hash(self.__key())
-
-    def __eq__(self, other):
-        return self.__key() == other.__key()
-
-class Downsamplers:
+class Downsamplers(object):
     """
     A container of downsampler classes.
     """
 
-    class Base(object):
+    class _Base(object):
         """
         Base class for downsamplers.
         """
 
+        name = None
         key = None
 
         def init(self):
-            pass
+            self.key = api.DOWNSAMPLERS[self.name]
 
         def update(self, datum):
             pass
@@ -76,12 +34,12 @@ class Downsamplers:
         def finish(self, output):
             pass
 
-    class Count(Base):
+    class Count(_Base):
         """
         Counts the number of datapoints.
         """
 
-        key = 'c'
+        name = 'count'
 
         def init(self):
             self.count = 0
@@ -93,12 +51,12 @@ class Downsamplers:
             assert self.key not in output
             output[self.key] = self.count
 
-    class Sum(Base):
+    class Sum(_Base):
         """
         Sums the datapoint values.
         """
 
-        key = 's'
+        name = 'sum'
 
         def init(self):
             self.sum = 0
@@ -110,12 +68,12 @@ class Downsamplers:
             assert self.key not in output
             output[self.key] = float(self.sum) if self.sum > MAXIMUM_INTEGER else self.sum
 
-    class SumSquares(Base):
+    class SumSquares(_Base):
         """
         Sums the squared datapoint values.
         """
 
-        key = 'q'
+        name = 'sum_squares'
 
         def init(self):
             self.sum = 0
@@ -127,12 +85,12 @@ class Downsamplers:
             assert self.key not in output
             output[self.key] = float(self.sum) if self.sum > MAXIMUM_INTEGER else self.sum
 
-    class Min(Base):
+    class Min(_Base):
         """
         Stores the minimum of the datapoint values.
         """
 
-        key = 'l'
+        name = 'min'
 
         def init(self):
             self.min = None
@@ -147,12 +105,12 @@ class Downsamplers:
             assert self.key not in output
             output[self.key] = self.min
 
-    class Max(Base):
+    class Max(_Base):
         """
         Stores the maximum of the datapoint values.
         """
 
-        key = 'u'
+        name = 'max'
 
         def init(self):
             self.max = None
@@ -167,35 +125,83 @@ class Downsamplers:
             assert self.key not in output
             output[self.key] = self.max
 
-    class Mean(Base):
+    class Mean(_Base):
         """
         Computes the mean from sum and count (postprocess).
         """
 
-        key = 'm'
+        name = 'mean'
         dependencies = ('sum', 'count')
 
         def postprocess(self, values):
             assert 'm' not in values
-            values[self.key] = float(values['s']) / values['c']
+            values[self.key] = float(values[api.DOWNSAMPLERS['sum']]) / values[api.DOWNSAMPLERS['count']]
 
-    class StdDev(Base):
+    class StdDev(_Base):
         """
         Computes the standard deviation from sum, count and sum squares
         (postprocess).
         """
 
-        key = 'd'
+        name = 'std_dev'
         dependencies = ('sum', 'count', 'sum_squares')
 
         def postprocess(self, values):
-            n = float(values['c'])
-            s = float(values['s'])
-            ss = float(values['q'])
+            n = float(values[api.DOWNSAMPLERS['count']])
+            s = float(values[api.DOWNSAMPLERS['sum']])
+            ss = float(values[api.DOWNSAMPLERS['sum_squares']])
             assert self.key not in values
             values[self.key] = (n * ss - s**2) / (n * (n - 1))
 
+    @utils.class_property
+    def values(cls):
+        if not hasattr(cls, '_values'):
+            cls._values = tuple([getattr(cls, name) for name in cls.__dict__ if name != 'values' and inspect.isclass(getattr(cls, name)) and getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)])
+        return cls._values
+
+class GranularityField(mongoengine.StringField):
+    def __init__(self, **kwargs):
+        kwargs.update({
+            'choices' : api.Granularity.values,
+        })
+        super(GranularityField, self).__init__(**kwargs)
+
+    def to_python(self, value):
+        return getattr(api.Granularity, value)
+
+    def to_mongo(self, value):
+        return value.__name__
+
+    def validate(self, value):
+        # No need for any special validation and no need for StringField validation
+        pass
+
+class DownsampleState(mongoengine.EmbeddedDocument):
+    timestamp = mongoengine.DateTimeField()
+
+    meta = dict(
+        allow_inheritance = False,
+    )
+
+class Metric(mongoengine.Document):
+    id = mongoengine.SequenceField(primary_key = True, db_alias = DATABASE_ALIAS)
+    external_id = mongoengine.UUIDField()
+    downsamplers = mongoengine.ListField(mongoengine.StringField(choices = [downsampler.name for downsampler in Downsamplers.values]))
+    downsample_state = mongoengine.MapField(mongoengine.EmbeddedDocumentField(DownsampleState))
+    downsample_needed = mongoengine.BooleanField(default = False)
+    highest_granularity = GranularityField()
+    tags = mongoengine.ListField(mongoengine.DynamicField())
+
+    meta = dict(
+        db_alias = DATABASE_ALIAS,
+        collection = 'metrics',
+        indexes = ('tags', 'external_id'),
+        allow_inheritance = False,
+    )
+
 class Backend(object):
+    downsamplers = set([downsampler.name for downsampler in Downsamplers.values])
+
     def __init__(self, database_name, **connection_settings):
         """
         Initializes the MongoDB backend.
@@ -207,20 +213,12 @@ class Backend(object):
         # Setup the database connection to MongoDB
         mongoengine.connect(database_name, DATABASE_ALIAS, **connection_settings)
 
-        self.downsamplers = (
-            ('count',       Downsamplers.Count),
-            ('sum',         Downsamplers.Sum),
-            ('sum_squares', Downsamplers.SumSquares),
-            ('min',         Downsamplers.Min),
-            ('max',         Downsamplers.Max),
-            ('mean',        Downsamplers.Mean),
-            ('std_dev',     Downsamplers.StdDev),
-        )
+        assert set(sum([[downsampler.name] + list(getattr(downsampler, 'dependencies', ())) for downsampler in Downsamplers.values], [])) <= set(api.DOWNSAMPLERS.keys())
 
         # Ensure indices on datapoints collections
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
-        for granularity in api.GRANULARITIES:
-            collection = getattr(db.datapoints, granularity)
+        for granularity in api.Granularity.values:
+            collection = getattr(db.datapoints, granularity.name)
             collection.ensure_index([
                 ('_id', pymongo.ASCENDING),
                 ('m', pymongo.ASCENDING),
@@ -242,7 +240,7 @@ class Backend(object):
 
                 # Convert dicts to hashable dicts so they can be used in set
                 # operations
-                tag = hashabledict(tag)
+                tag = utils.hashabledict(tag)
 
             converted_tags.add(tag)
 
@@ -271,26 +269,26 @@ class Backend(object):
             # Some downsampling functions don't need to be stored in the database but
             # can be computed on the fly from other downsampled values
             downsamplers = set(downsamplers)
-            for tag, d in self.downsamplers:
-                if tag in downsamplers and hasattr(d, 'dependencies'):
-                    downsamplers.update(d.dependencies)
+            for downsampler in Downsamplers.values:
+                if downsampler.name in downsamplers and hasattr(downsampler, 'dependencies'):
+                    downsamplers.update(downsampler.dependencies)
 
-            # Ensure that the granularity is a valid one and raise error otherwise
-            if highest_granularity not in api.GRANULARITIES:
-                raise exceptions.UnsupportedGranularity
+            if not downsamplers <= self.downsamplers:
+                raise exceptions.UnknownDownsampler("Unknown downsampler(s): %s" % list(downsamplers - self.downsamplers))
+
+            # This should already be checked at the API level
+            assert highest_granularity in api.Granularity.values
 
             metric.downsamplers = list(downsamplers)
             metric.highest_granularity = highest_granularity
             metric.tags = list(self._process_tags(query_tags).union(self._process_tags(tags)))
 
             # Initialize downsample state
-            if highest_granularity != api.GRANULARITIES[-1]:
-                for granularity in api.GRANULARITIES[api.GRANULARITIES.index(highest_granularity) + 1:]:
-                    metric.downsample_state[granularity] = DownsampleState()
+            if highest_granularity != api.Granularity.values[-1]:
+                for granularity in api.Granularity.values[api.Granularity.values.index(highest_granularity) + 1:]:
+                    metric.downsample_state[granularity.name] = DownsampleState()
 
             metric.save()
-        except mongoengine.ValidationError:
-            raise exceptions.UnsupportedDownsampler
         except Metric.MultipleObjectsReturned:
             raise exceptions.MultipleMetricsReturned
 
@@ -384,7 +382,7 @@ class Backend(object):
 
         # Insert the datapoint into appropriate granularity
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
-        collection = getattr(db.datapoints, metric.highest_granularity)
+        collection = getattr(db.datapoints, metric.highest_granularity.name)
         id = collection.insert({ 'm' : metric.id, 'v' : value })
 
         # Check if we need to perform any downsampling
@@ -407,18 +405,15 @@ class Backend(object):
         except Metric.DoesNotExist:
             raise exceptions.MetricNotFound
 
-        # Validate specified granularity
-        try:
-            granularity_idx = api.GRANULARITIES.index(granularity)
-            max_granularity_idx = api.GRANULARITIES.index(metric.highest_granularity)
-            if granularity_idx < max_granularity_idx:
-                granularity = metric.highest_granularity
-        except IndexError:
-            raise exceptions.UnsupportedGranularity
+        # This should already be checked at the API level
+        assert granularity in api.Granularity.values
+
+        if granularity > metric.highest_granularity:
+            granularity = metric.highest_granularity
 
         # Get the datapoints
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
-        collection = getattr(db.datapoints, granularity)
+        collection = getattr(db.datapoints, granularity.name)
         pts = collection.find({
             '_id' : {
                 '$gte' : objectid.ObjectId.from_datetime(start),
@@ -454,10 +449,10 @@ class Backend(object):
         """
 
         round_map = {
-            'seconds' : ['year', 'month', 'day', 'hour', 'minute', 'second'],
-            'minutes' : ['year', 'month', 'day', 'hour', 'minute'],
-            'hours'   : ['year', 'month', 'day', 'hour'],
-            'days'    : ['year', 'month', 'day']
+            api.Granularity.Seconds : ['year', 'month', 'day', 'hour', 'minute', 'second'],
+            api.Granularity.Minutes : ['year', 'month', 'day', 'hour', 'minute'],
+            api.Granularity.Hours   : ['year', 'month', 'day', 'hour'],
+            api.Granularity.Days    : ['year', 'month', 'day']
         }
 
         return datetime.datetime(**dict(((atom, getattr(timestamp, atom)) for atom in round_map[granularity])))
@@ -473,8 +468,8 @@ class Backend(object):
             only a flag will be raised
         """
 
-        for granularity in api.GRANULARITIES[api.GRANULARITIES.index(metric.highest_granularity) + 1:]:
-            state = metric.downsample_state.get(granularity, None)
+        for granularity in api.Granularity.values[api.Granularity.values.index(metric.highest_granularity) + 1:]:
+            state = metric.downsample_state.get(granularity.name, None)
             rounded_timestamp = self._round_downsampled_timestamp(datum_timestamp, granularity)
             if state is None or rounded_timestamp != state.timestamp:
                 if not execute:
@@ -513,8 +508,8 @@ class Backend(object):
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
 
         # Determine the interval that needs downsampling
-        datapoints = getattr(db.datapoints, metric.highest_granularity)
-        state = metric.downsample_state[granularity]
+        datapoints = getattr(db.datapoints, metric.highest_granularity.name)
+        state = metric.downsample_state[granularity.name]
         if state.timestamp is not None:
             datapoints = datapoints.find({
                 '_id' : { '$gte' : objectid.ObjectId.from_datetime(state.timestamp) },
@@ -526,14 +521,14 @@ class Backend(object):
 
         # Initialize downsamplers
         downsamplers = []
-        for tag, downsampler in self.downsamplers:
-            if tag in metric.downsamplers:
+        for downsampler in Downsamplers.values:
+            if downsampler.name in metric.downsamplers:
                 downsamplers.append(downsampler())
 
         # Pack metric identifier to be used for object id generation
         metric_id = struct.pack('>Q', metric.id)
 
-        downsampled_points = getattr(db.datapoints, granularity)
+        downsampled_points = getattr(db.datapoints, granularity.name)
         last_timestamp = None
         for datapoint in datapoints.sort('_id'):
             ts = datapoint['_id'].generation_time
@@ -568,4 +563,4 @@ class Backend(object):
                 x.update(datapoint['v'])
 
         # At the end, update the current timestamp in downsample_state
-        metric.downsample_state[granularity].timestamp = last_timestamp
+        metric.downsample_state[granularity.name].timestamp = last_timestamp

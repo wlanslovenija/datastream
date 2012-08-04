@@ -7,11 +7,14 @@ class MetricNotFound(DatastreamException):
 class MultipleMetricsReturned(DatastreamException):
     pass
 
-class UnsupportedDownsampler(DatastreamException):
+class UnsupportedDownsampler(DatastreamException, ValueError):
     pass
 
-class UnsupportedGranularity(DatastreamException):
+class UnknownDownsampler(DatastreamException, ValueError):
     pass
 
-class ReservedTagNameError(DatastreamException):
+class UnsupportedGranularity(DatastreamException, ValueError):
+    pass
+
+class ReservedTagNameError(DatastreamException, ValueError):
     pass
