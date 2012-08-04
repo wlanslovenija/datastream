@@ -28,7 +28,7 @@ class Downsamplers(object):
         def __init__(self):
             self.key = api.DOWNSAMPLERS[self.name]
 
-        def init(self):
+        def initialize(self):
             pass
 
         def update(self, datum):
@@ -44,7 +44,7 @@ class Downsamplers(object):
 
         name = 'count'
 
-        def init(self):
+        def initialize(self):
             self.count = 0
 
         def update(self, datum):
@@ -61,7 +61,7 @@ class Downsamplers(object):
 
         name = 'sum'
 
-        def init(self):
+        def initialize(self):
             self.sum = 0
 
         def update(self, datum):
@@ -78,7 +78,7 @@ class Downsamplers(object):
 
         name = 'sum_squares'
 
-        def init(self):
+        def initialize(self):
             self.sum = 0
 
         def update(self, datum):
@@ -95,7 +95,7 @@ class Downsamplers(object):
 
         name = 'min'
 
-        def init(self):
+        def initialize(self):
             self.min = None
 
         def update(self, datum):
@@ -115,7 +115,7 @@ class Downsamplers(object):
 
         name = 'max'
 
-        def init(self):
+        def initialize(self):
             self.max = None
 
         def update(self, datum):
@@ -522,7 +522,7 @@ class Backend(object):
             # All datapoints should be selected as we obviously haven't done any downsampling yet
             datapoints = datapoints.find({ 'm' : metric.id })
 
-        # Initialize downsamplers
+        # Construct downsampler instances
         downsamplers = []
         for downsampler in Downsamplers.values:
             if downsampler.name in metric.downsamplers:
@@ -538,12 +538,12 @@ class Backend(object):
             rounded_timestamp = self._round_downsampled_timestamp(ts, granularity)
             if last_timestamp is None:
                 for x in downsamplers:
-                    x.init()
+                    x.initialize()
             elif last_timestamp != rounded_timestamp:
                 value = {}
                 for x in downsamplers:
                     x.finish(value)
-                    x.init()
+                    x.initialize()
 
                 # Insert downsampled value
                 point_id = self._generate_timed_object_id(rounded_timestamp, metric_id)
