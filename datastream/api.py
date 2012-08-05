@@ -6,10 +6,21 @@ from . import exceptions, utils
 
 class Granularity(object):
     class _Base(object):
-        @utils.total_ordering
         class _BaseMetaclass(type):
             def __lt__(self, other):
                 return self._order < other._order
+
+            def __gt__(self, other):
+                return self._order > other._order
+
+            def __le__(self, other):
+                return self._order <= other._order
+
+            def __ge__(self, other):
+                return self._order >= other._order
+
+            def __eq__(self, other):
+                return self._order == other._order
 
             def __str__(self):
                 return self.__name__.lower()
@@ -44,6 +55,11 @@ class Granularity(object):
 
 # We want initial letters to be unique
 assert len(set(granularity.name.lower()[0] for granularity in Granularity.values)) == len(Granularity.values)
+
+# _order values should be unique
+assert len(set(granularity._order for granularity in Granularity.values)) == len(Granularity.values)
+
+assert Granularity.Seconds > Granularity.Minutes > Granularity.Hours > Granularity.Days
 
 RESERVED_TAGS = (
     'metric_id',

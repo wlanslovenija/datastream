@@ -34,7 +34,7 @@ class BasicTest(object):
         self.assertEqual(len(data), 1)
 
         data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0))
-        self.assertEqual(len(data), 0)
+        self.assertItemsEqual(data, [])
 
         self.datastream.downsample_metrics()
 
