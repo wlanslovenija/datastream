@@ -36,6 +36,10 @@ class BasicTest(object):
         data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0))
         self.assertItemsEqual(data, [])
 
+        # TODO: We have to find a better way to test this
+        # Have to wait for minute to pass so that downsample will do something for minute granularity
+        time.sleep(60)
+
         self.datastream.downsample_metrics()
 
         data = self.datastream.get_data(metric_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
@@ -45,6 +49,10 @@ class BasicTest(object):
         data = self.datastream.get_data(metric_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0))
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]['v'], 42)
+
+        data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
+        self.assertEqual(len(data), 1)
+        self.assertItemsEqual(data[0]['v'].keys(), self.downsamplers)
 
         data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0))
         self.assertEqual(len(data), 1)
