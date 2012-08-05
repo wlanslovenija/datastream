@@ -10,9 +10,6 @@ class MultipleMetricsReturned(DatastreamException):
 class UnsupportedDownsampler(DatastreamException, ValueError):
     pass
 
-class UnknownDownsampler(DatastreamException, ValueError):
-    pass
-
 class UnsupportedGranularity(DatastreamException, ValueError):
     pass
 

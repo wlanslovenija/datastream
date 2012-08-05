@@ -277,7 +277,7 @@ class Backend(object):
                     downsamplers.update(downsampler.dependencies)
 
             if not downsamplers <= self.downsamplers:
-                raise exceptions.UnknownDownsampler("Unknown downsampler(s): %s" % list(downsamplers - self.downsamplers))
+                raise exceptions.UnsupportedDownsampler("Unsupported downsampler(s): %s" % list(downsamplers - self.downsamplers))
 
             # This should already be checked at the API level
             assert highest_granularity in api.Granularity.values
@@ -392,7 +392,7 @@ class Backend(object):
         if id is not None and not metric.downsample_needed:
             self._downsample_check(metric, id.generation_time)
 
-    def get_data(self, metric_id, granularity, start, end=None):
+    def get_data(self, metric_id, granularity, start, end=None, downsamplers=None):
         """
         Retrieves data from a certain time range and of a certain granularity.
 
@@ -400,6 +400,7 @@ class Backend(object):
         :param granularity: Wanted granularity
         :param start: Time range start
         :param end: Time range end (optional)
+        :param downsamplers: The list of downsamplers to limit datapoint values to (optional)
         :return: A list of datapoints
         """
 
@@ -413,6 +414,17 @@ class Backend(object):
 
         if granularity > metric.highest_granularity:
             granularity = metric.highest_granularity
+
+        if granularity == metric.highest_granularity:
+            # On highest granularity downsamplers are not used
+            downsamplers = None
+
+        if downsamplers is not None:
+            downsamplers = set(downsamplers)
+            if not downsamplers <= self.downsamplers:
+                raise exceptions.UnsupportedDownsampler("Unsupported downsampler(s): %s" % list(downsamplers - self.downsamplers))
+
+            downsamplers = ['v.%s' % d for d in downsamplers]
 
         # Get the datapoints
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
@@ -430,7 +442,7 @@ class Backend(object):
         pts = collection.find({
             '_id' : time_query,
             'm' : metric.id,
-        }).sort('_id')
+        }, downsamplers).sort('_id')
 
         return [{ 't' : x['_id'].generation_time, 'v' : x['v'] } for x in pts]
 

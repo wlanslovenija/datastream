@@ -29,13 +29,31 @@ class BasicTest(object):
         self.assertItemsEqual(data, [])
 
         self.datastream.insert(metric_id, 42)
-        self.datastream.downsample_metrics()
 
         data = self.datastream.get_data(metric_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
         self.assertEqual(len(data), 1)
 
+        data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0))
+        self.assertEqual(len(data), 0)
+
+        self.datastream.downsample_metrics()
+
+        data = self.datastream.get_data(metric_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]['v'], 42)
+
         data = self.datastream.get_data(metric_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0))
         self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]['v'], 42)
+
+        data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0))
+        self.assertEqual(len(data), 1)
+        self.assertItemsEqual(data[0]['v'].keys(), self.downsamplers)
+
+        data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0), downsamplers=('count',))
+        self.assertEqual(len(data), 1)
+        self.assertItemsEqual(data[0]['v'].keys(), ('count',))
+        self.assertEqual(data[0]['v']['count'], 1)
 
 class MongoDBBasicTest(BasicTest, unittest.TestCase):
     database_name = 'test_database'

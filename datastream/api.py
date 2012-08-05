@@ -91,9 +91,9 @@ class Datastream(object):
         if highest_granularity not in Granularity.values:
             raise exceptions.UnsupportedGranularity("'highest_granularity' is not a valid value: '%s'" % highest_granularity)
 
-        unknown_downsamplers = list(set(downsamplers) - set(DOWNSAMPLERS.keys()))
-        if len(unknown_downsamplers) > 0:
-            raise exceptions.UnknownDownsampler("Unknown downsampler(s): %s" % unknown_downsamplers)
+        unsupported_downsamplers = list(set(downsamplers) - set(DOWNSAMPLERS.keys()))
+        if len(unsupported_downsamplers) > 0:
+            raise exceptions.UnsupportedDownsampler("Unsupported downsampler(s): %s" % unsupported_downsamplers)
 
         return self.backend.ensure_metric(query_tags, tags, downsamplers, highest_granularity)
 
@@ -137,7 +137,7 @@ class Datastream(object):
 
         return self.backend.insert(metric_id, value)
 
-    def get_data(self, metric_id, granularity, start, end=None):
+    def get_data(self, metric_id, granularity, start, end=None, downsamplers=None):
         """
         Retrieves data from a certain time range and of a certain granularity.
 
@@ -145,13 +145,19 @@ class Datastream(object):
         :param granularity: Wanted granularity
         :param start: Time range start
         :param end: Time range end (optional)
+        :param downsamplers: The list of downsamplers to limit datapoint values to (optional)
         :return: A list of datapoints
         """
 
         if granularity not in Granularity.values:
             raise exceptions.UnsupportedGranularity("'granularity' is not a valid value: '%s'" % granularity)
 
-        return self.backend.get_data(metric_id, granularity, start, end)
+        if downsamplers is not None:
+            unsupported_downsamplers = set(downsamplers) - set(DOWNSAMPLERS.keys())
+            if len(unsupported_downsamplers) > 0:
+                raise exceptions.UnsupportedDownsampler("Unsupported downsampler(s): %s" % unsupported_downsamplers)
+
+        return self.backend.get_data(metric_id, granularity, start, end, downsamplers)
 
     def downsample_metrics(self, query_tags=None):
         """
