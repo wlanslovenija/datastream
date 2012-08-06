@@ -1,4 +1,4 @@
-import datetime, inspect, os, struct, time, uuid
+import calendar, datetime, inspect, os, struct, uuid
 
 import pymongo
 from bson import objectid
@@ -557,7 +557,7 @@ class Backend(object):
 
         oid = objectid.EMPTY
         # 4 bytes timestamp
-        oid += struct.pack('>i', int(time.mktime(timestamp.timetuple())))
+        oid += struct.pack('>i', int(calendar.timegm(timestamp.timetuple())))
         # 8 bytes of packed metric identifier
         oid += metric_id
         return objectid.ObjectId(oid)
