@@ -39,6 +39,9 @@ class Downsamplers(object):
         def finish(self, output):
             pass
 
+        def postprocess(self, values):
+            pass
+
     class Count(_Base):
         """
         Counts the number of datapoints.
@@ -156,7 +159,11 @@ class Downsamplers(object):
             s = float(values[api.DOWNSAMPLERS['sum']])
             ss = float(values[api.DOWNSAMPLERS['sum_squares']])
             assert self.key not in values
-            values[self.key] = (n * ss - s**2) / (n * (n - 1))
+            
+            if n == 1:
+                values[self.key] = 0
+            else:
+                values[self.key] = (n * ss - s**2) / (n * (n - 1))
 
     @utils.class_property
     def values(cls):
@@ -593,6 +600,9 @@ class Backend(object):
             value = {}
             for x in downsamplers:
                 x.finish(value)
+
+            for x in downsamplers:
+                x.postprocess(value)
                 x.initialize()
 
             # Insert downsampled value
