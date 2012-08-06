@@ -1,4 +1,4 @@
-import datetime, struct, time, inspect, uuid
+import datetime, inspect, os, struct, time, uuid
 
 import pymongo
 from bson import objectid
@@ -11,6 +11,8 @@ DATABASE_ALIAS = 'datastream'
 
 # The largest integer that can be stored in MongoDB; larger values need to use floats
 MAXIMUM_INTEGER = 2**63 - 1
+
+ZERO_TIMEDELTA = datetime.timedelta()
 
 class Downsamplers(object):
     """
@@ -227,6 +229,9 @@ class Backend(object):
                 ('m', pymongo.ASCENDING),
             ])
 
+        # Used only to artificially advance time when testing, don't use!
+        self._time_offset = ZERO_TIMEDELTA
+
     def _process_tags(self, tags):
         """
         Checks that reserved tags are not used and converts dicts to their
@@ -379,6 +384,7 @@ class Backend(object):
         """
 
         try:
+            # TODO: Do we really need to do two queries? We could simply try to insert and if metric's collection would fail, we would raise an exception
             metric = Metric.objects.get(external_id = metric_id)
         except Metric.DoesNotExist:
             raise exceptions.MetricNotFound
@@ -386,10 +392,15 @@ class Backend(object):
         # Insert the datapoint into appropriate granularity
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
         collection = getattr(db.datapoints, metric.highest_granularity.name)
-        id = collection.insert({ 'm' : metric.id, 'v' : value }, safe = True)
+        if self._time_offset == ZERO_TIMEDELTA:
+            id = collection.insert({ 'm' : metric.id, 'v' : value }, safe = True)
+        else:
+            object_id = self._generate_test_object_id()
+            id = collection.insert({ '_id' : object_id, 'm' : metric.id, 'v' : value }, safe = True)
 
         # Check if we need to perform any downsampling
         if id is not None and not metric.downsample_needed:
+            # TODO: And also here, we are already updating metric in _downsample_check, so where is that not-two queries in insert argument?
             self._downsample_check(metric, id.generation_time)
 
     def get_data(self, metric_id, granularity, start, end=None, downsamplers=None):
@@ -424,7 +435,7 @@ class Backend(object):
             if not downsamplers <= self.downsamplers:
                 raise exceptions.UnsupportedDownsampler("Unsupported downsampler(s): %s" % list(downsamplers - self.downsamplers))
 
-            downsamplers = ['v.%s' % d for d in downsamplers]
+            downsamplers = ['v.%s' % api.DOWNSAMPLERS[d] for d in downsamplers]
 
         # Get the datapoints
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
@@ -454,7 +465,7 @@ class Backend(object):
         :param query_tags: Tags that should be matched to metrics
         """
 
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.utcnow() + self._time_offset
         qs = self._get_metric_queryset(query_tags).filter(downsample_needed = True)
 
         for metric in qs:
@@ -502,6 +513,30 @@ class Backend(object):
 
         metric.save()
 
+    def _generate_test_object_id(self):
+        """
+        Generates a new ObjectId with time offset. Used only when testing.
+        """
+
+        oid = objectid.EMPTY
+
+        # 4 bytes current time
+        oid += struct.pack('>i', int(time.time() + self._time_offset.total_seconds()))
+
+        # 3 bytes machine
+        oid += objectid.ObjectId._machine_bytes
+
+        # 2 bytes pid
+        oid += struct.pack('>H', os.getpid() % 0xFFFF)
+
+        # 3 bytes inc
+        objectid.ObjectId._inc_lock.acquire()
+        oid += struct.pack('>i', objectid.ObjectId._inc)[1:4]
+        objectid.ObjectId._inc = (objectid.ObjectId._inc + 1) % 0xFFFFFF
+        objectid.ObjectId._inc_lock.release()
+
+        return objectid.ObjectId(oid)
+
     def _generate_timed_object_id(self, timestamp, metric_id):
         """
         Generates a unique ObjectID for a specific timestamp and metric identifier.
@@ -511,7 +546,7 @@ class Backend(object):
         :return: A valid object identifier
         """
 
-        oid = ''
+        oid = objectid.EMPTY
         # 4 bytes timestamp
         oid += struct.pack('>i', int(time.mktime(timestamp.timetuple())))
         # 8 bytes of packed metric identifier
