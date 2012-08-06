@@ -161,7 +161,10 @@ class Downsamplers(object):
     @utils.class_property
     def values(cls):
         if not hasattr(cls, '_values'):
-            cls._values = tuple([getattr(cls, name) for name in cls.__dict__ if name != 'values' and inspect.isclass(getattr(cls, name)) and getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)])
+            cls._values = tuple([getattr(cls, name) for name in cls.__dict__ if name != 'values' and \
+                inspect.isclass(getattr(cls, name)) and getattr(cls, name) is not cls._Base and \
+                issubclass(getattr(cls, name), cls._Base)])
+
         return cls._values
 
 class GranularityField(mongoengine.StringField):
@@ -191,9 +194,9 @@ class DownsampleState(mongoengine.EmbeddedDocument):
 class Metric(mongoengine.Document):
     id = mongoengine.SequenceField(primary_key = True, db_alias = DATABASE_ALIAS)
     external_id = mongoengine.UUIDField()
-    downsamplers = mongoengine.ListField(mongoengine.StringField(choices = [downsampler.name for downsampler in Downsamplers.values]))
+    downsamplers = mongoengine.ListField(mongoengine.StringField(
+      choices = [downsampler.name for downsampler in Downsamplers.values]))
     downsample_state = mongoengine.MapField(mongoengine.EmbeddedDocumentField(DownsampleState))
-    downsample_needed = mongoengine.BooleanField(default = False)
     highest_granularity = GranularityField()
     tags = mongoengine.ListField(mongoengine.DynamicField())
 
@@ -282,7 +285,8 @@ class Backend(object):
                     downsamplers.update(downsampler.dependencies)
 
             if not downsamplers <= self.downsamplers:
-                raise exceptions.UnsupportedDownsampler("Unsupported downsampler(s): %s" % list(downsamplers - self.downsamplers))
+                raise exceptions.UnsupportedDownsampler("Unsupported downsampler(s): %s" % \
+                                                        list(downsamplers - self.downsamplers))
 
             # This should already be checked at the API level
             assert highest_granularity in api.Granularity.values
@@ -294,7 +298,10 @@ class Backend(object):
             # Initialize downsample state
             if highest_granularity != api.Granularity.values[-1]:
                 for granularity in api.Granularity.values[api.Granularity.values.index(highest_granularity) + 1:]:
-                    metric.downsample_state[granularity.name] = DownsampleState()
+                    state = DownsampleState()
+                    state.timestamp = self._round_downsampled_timestamp(
+                        datetime.datetime.utcnow() + self._time_offset, granularity)
+                    metric.downsample_state[granularity.name] = state
 
             metric.save()
         except Metric.MultipleObjectsReturned:
@@ -384,7 +391,6 @@ class Backend(object):
         """
 
         try:
-            # TODO: Do we really need to do two queries? We could simply try to insert and if metric's collection would fail, we would raise an exception
             metric = Metric.objects.get(external_id = metric_id)
         except Metric.DoesNotExist:
             raise exceptions.MetricNotFound
@@ -397,11 +403,6 @@ class Backend(object):
         else:
             object_id = self._generate_test_object_id()
             id = collection.insert({ '_id' : object_id, 'm' : metric.id, 'v' : value }, safe = True)
-
-        # Check if we need to perform any downsampling
-        if id is not None and not metric.downsample_needed:
-            # TODO: And also here, we are already updating metric in _downsample_check, so where is that not-two queries in insert argument?
-            self._downsample_check(metric, id.generation_time)
 
     def get_data(self, metric_id, granularity, start, end=None, downsamplers=None):
         """
@@ -433,7 +434,8 @@ class Backend(object):
         if downsamplers is not None:
             downsamplers = set(downsamplers)
             if not downsamplers <= self.downsamplers:
-                raise exceptions.UnsupportedDownsampler("Unsupported downsampler(s): %s" % list(downsamplers - self.downsamplers))
+                raise exceptions.UnsupportedDownsampler("Unsupported downsampler(s): %s" % \
+                                                        list(downsamplers - self.downsamplers))
 
             downsamplers = ['v.%s' % api.DOWNSAMPLERS[d] for d in downsamplers]
 
@@ -443,6 +445,7 @@ class Backend(object):
         time_query = {
             '$gte' : objectid.ObjectId.from_datetime(start),
         }
+
         if end is not None:
             # We add one second and use strict less-than to cover all
             # possible ObjectId values in a given "end" timestamp
@@ -450,6 +453,7 @@ class Backend(object):
             time_query.update({
                 '$lt' : objectid.ObjectId.from_datetime(end),
             })
+
         pts = collection.find({
             '_id' : time_query,
             'm' : metric.id,
@@ -466,10 +470,10 @@ class Backend(object):
         """
 
         now = datetime.datetime.utcnow() + self._time_offset
-        qs = self._get_metric_queryset(query_tags).filter(downsample_needed = True)
+        qs = self._get_metric_queryset(query_tags)
 
         for metric in qs:
-            self._downsample_check(metric, now, execute = True)
+            self._downsample_check(metric, now)
 
     def _round_downsampled_timestamp(self, timestamp, granularity):
         """
@@ -490,28 +494,19 @@ class Backend(object):
 
         return datetime.datetime(**dict(((atom, getattr(timestamp, atom)) for atom in round_map[granularity])))
 
-    def _downsample_check(self, metric, datum_timestamp, execute = False):
+    def _downsample_check(self, metric, datum_timestamp):
         """
         Checks if we need to perform any metric downsampling. In case it is needed,
-        we raise a flag or perform downsampling, depending on the `execute` argument.
+        we perform downsampling.
 
         :param metric: Metric instance
         :param datum_timestamp: Timestamp of the newly inserted datum
-        :param execute: If set to True, downsampling will be performed, otherwise
-            only a flag will be raised
         """
-
         for granularity in api.Granularity.values[api.Granularity.values.index(metric.highest_granularity) + 1:]:
             state = metric.downsample_state.get(granularity.name, None)
             rounded_timestamp = self._round_downsampled_timestamp(datum_timestamp, granularity)
-            if state is None or rounded_timestamp != state.timestamp:
-                if not execute:
-                    metric.downsample_needed = True
-                else:
-                    self._downsample(metric, granularity, rounded_timestamp)
-                    metric.downsample_needed = False
-
-        metric.save()
+            if state is None or rounded_timestamp > state.timestamp:
+                self._downsample(metric, granularity, rounded_timestamp)
 
     def _generate_test_object_id(self):
         """
@@ -559,7 +554,8 @@ class Backend(object):
 
         :param metric: Metric instance
         :param granularity: Lower granularity to downsample into
-        :param current_timestamp: Timestamp of the last inserted datapoint
+        :param current_timestamp: Timestamp of the last inserted datapoint, rounded
+          to specified granularity
         """
 
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
@@ -569,12 +565,20 @@ class Backend(object):
         state = metric.downsample_state[granularity.name]
         if state.timestamp is not None:
             datapoints = datapoints.find({
-                '_id' : { '$gte' : objectid.ObjectId.from_datetime(state.timestamp) },
+                '_id' : {
+                    '$gte' : objectid.ObjectId.from_datetime(state.timestamp),
+                    '$lt'  : objectid.ObjectId.from_datetime(current_timestamp)
+                },
                 'm' : metric.id,
             })
         else:
             # All datapoints should be selected as we obviously haven't done any downsampling yet
-            datapoints = datapoints.find({ 'm' : metric.id })
+            datapoints = datapoints.find({
+                '_id' : {
+                    '$lt' : objectid.ObjectId.from_datetime(current_timestamp)
+                },
+                'm' : metric.id
+            })
 
         # Construct downsampler instances
         downsamplers = []
@@ -585,6 +589,21 @@ class Backend(object):
         # Pack metric identifier to be used for object id generation
         metric_id = struct.pack('>Q', metric.id)
 
+        def store_downsampled_datapoint():
+            value = {}
+            for x in downsamplers:
+                x.finish(value)
+                x.initialize()
+
+            # Insert downsampled value
+            point_id = self._generate_timed_object_id(rounded_timestamp, metric_id)
+            downsampled_points.update(
+                { '_id' : point_id, 'm' : metric.id },
+                { '_id' : point_id, 'm' : metric.id, 'v' : value },
+                upsert = True,
+                safe = True,
+            )
+
         downsampled_points = getattr(db.datapoints, granularity.name)
         last_timestamp = None
         for datapoint in datapoints.sort('_id'):
@@ -594,31 +613,16 @@ class Backend(object):
                 for x in downsamplers:
                     x.initialize()
             elif last_timestamp != rounded_timestamp:
-                value = {}
-                for x in downsamplers:
-                    x.finish(value)
-                    x.initialize()
-
-                # Insert downsampled value
-                point_id = self._generate_timed_object_id(rounded_timestamp, metric_id)
-                downsampled_points.update(
-                    { '_id' : point_id, 'm' : metric.id },
-                    { '_id' : point_id, 'm' : metric.id, 'v' : value },
-                    upsert = True,
-                    safe = True,
-                )
+                store_downsampled_datapoint()
 
             last_timestamp = rounded_timestamp
-
-            # Abort when we reach the current rounded timestamp as we will process all further
-            # datapoints in the next downsampling run; do not call finish on downsamplers as it
-            # has already been called above when some datapoints exist
-            if rounded_timestamp >= current_timestamp:
-                break
 
             # Update all downsamplers for the current datapoint
             for x in downsamplers:
                 x.update(datapoint['v'])
+
+        # Don't forget to store the last downsampled datapoint
+        store_downsampled_datapoint()
 
         # At the end, update the current timestamp in downsample_state
         metric.downsample_state[granularity.name].timestamp = last_timestamp
