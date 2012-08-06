@@ -168,9 +168,11 @@ class Downsamplers(object):
     @utils.class_property
     def values(cls):
         if not hasattr(cls, '_values'):
-            cls._values = tuple([getattr(cls, name) for name in cls.__dict__ if name != 'values' and \
-                inspect.isclass(getattr(cls, name)) and getattr(cls, name) is not cls._Base and \
-                issubclass(getattr(cls, name), cls._Base)])
+            cls._values = tuple([
+                getattr(cls, name) for name in cls.__dict__ if \
+                    name != 'values' and inspect.isclass(getattr(cls, name)) and \
+                    getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)
+            ])
 
         return cls._values
 
@@ -202,7 +204,8 @@ class Metric(mongoengine.Document):
     id = mongoengine.SequenceField(primary_key = True, db_alias = DATABASE_ALIAS)
     external_id = mongoengine.UUIDField()
     downsamplers = mongoengine.ListField(mongoengine.StringField(
-      choices = [downsampler.name for downsampler in Downsamplers.values]))
+        choices = [downsampler.name for downsampler in Downsamplers.values],
+    ))
     downsample_state = mongoengine.MapField(mongoengine.EmbeddedDocumentField(DownsampleState))
     highest_granularity = GranularityField()
     tags = mongoengine.ListField(mongoengine.DynamicField())
@@ -270,10 +273,10 @@ class Backend(object):
 
         :param query_tags: Tags which uniquely identify a metric
         :param tags: Tags that should be used (together with `query_tags`) to create a
-            metric when it doesn't yet exist
+                     metric when it doesn't yet exist
         :param downsamplers: A set of names of downsampler functions for this metric
         :param highest_granularity: Predicted highest granularity of the data the metric
-            will store, may be used to optimize data storage
+                                    will store, may be used to optimize data storage
         :return: A metric identifier
         """
 
@@ -292,8 +295,9 @@ class Backend(object):
                     downsamplers.update(downsampler.dependencies)
 
             if not downsamplers <= self.downsamplers:
-                raise exceptions.UnsupportedDownsampler("Unsupported downsampler(s): %s" % \
-                                                        list(downsamplers - self.downsamplers))
+                raise exceptions.UnsupportedDownsampler(
+                    "Unsupported downsampler(s): %s" % list(downsamplers - self.downsamplers),
+                )
 
             # This should already be checked at the API level
             assert highest_granularity in api.Granularity.values
@@ -307,7 +311,9 @@ class Backend(object):
                 for granularity in api.Granularity.values[api.Granularity.values.index(highest_granularity) + 1:]:
                     state = DownsampleState()
                     state.timestamp = self._round_downsampled_timestamp(
-                        datetime.datetime.utcnow() + self._time_offset, granularity)
+                        datetime.datetime.utcnow() + self._time_offset,
+                        granularity,
+                    )
                     metric.downsample_state[granularity.name] = state
 
             metric.save()
@@ -441,8 +447,9 @@ class Backend(object):
         if downsamplers is not None:
             downsamplers = set(downsamplers)
             if not downsamplers <= self.downsamplers:
-                raise exceptions.UnsupportedDownsampler("Unsupported downsampler(s): %s" % \
-                                                        list(downsamplers - self.downsamplers))
+                raise exceptions.UnsupportedDownsampler(
+                    "Unsupported downsampler(s): %s" % list(downsamplers - self.downsamplers),
+                )
 
             downsamplers = ['v.%s' % api.DOWNSAMPLERS[d] for d in downsamplers]
 
@@ -562,7 +569,7 @@ class Backend(object):
         :param metric: Metric instance
         :param granularity: Lower granularity to downsample into
         :param current_timestamp: Timestamp of the last inserted datapoint, rounded
-          to specified granularity
+                                  to specified granularity
         """
 
         db = mongoengine.connection.get_db(DATABASE_ALIAS)

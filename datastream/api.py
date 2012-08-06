@@ -50,7 +50,11 @@ class Granularity(object):
     @utils.class_property
     def values(cls):
         if not hasattr(cls, '_values'):
-            cls._values = tuple(sorted([getattr(cls, name) for name in cls.__dict__ if name != 'values' and inspect.isclass(getattr(cls, name)) and getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)], reverse=True))
+            cls._values = tuple(sorted([
+                getattr(cls, name) for name in cls.__dict__ if \
+                    name != 'values' and inspect.isclass(getattr(cls, name)) and \
+                    getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)
+            ], reverse=True))
         return cls._values
 
 # We want initial letters to be unique
@@ -97,10 +101,10 @@ class Datastream(object):
 
         :param query_tags: Tags which uniquely identify a metric
         :param tags: Tags that should be used (together with `query_tags`) to create a
-            metric when it doesn't yet exist
+                     metric when it doesn't yet exist
         :param downsamplers: A set of names of downsampler functions for this metric
         :param highest_granularity: Predicted highest granularity of the data the metric
-            will store, may be used to optimize data storage
+                                    will store, may be used to optimize data storage
         :return: A metric identifier
         """
 
