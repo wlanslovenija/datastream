@@ -365,7 +365,29 @@ class Backend(object):
         :param tags: A list of new tags
         """
 
-        Metric.objects(external_id = metric_id).update(tags = list(self._process_tags(tags)))
+        Metric.objects(external_id = metric_id).update(set__tags = list(self._process_tags(tags)))
+
+    def remove_tag(self, metric_id, tag):
+        """
+        Removes metric tag.
+
+        :param metric_id: Metric identifier
+        :param tag: Tag value to remove
+        """
+
+        Metric.objects(external_id = metric_id).update(pull__tags = tag)
+
+    def clear_tags(self, metric_id):
+        """
+        Removes (clears) all non-readonly metric tags.
+
+        Care should be taken that some tags are set immediately afterwards which uniquely
+        identify a metric to be able to use query the metric, in for example, `ensure_metric`.
+
+        :param metric_id: Metric identifier
+        """
+
+        Metric.objects(external_id = metric_id).update(set__tags = [])
 
     def _get_metric_queryset(self, query_tags):
         """

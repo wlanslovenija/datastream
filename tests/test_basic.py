@@ -7,19 +7,34 @@ from datastream.backends import mongodb
 
 class BasicTest(object):
     def test_basic(self):
-        query_tags = (
+        query_tags = [
             {'name': 'foobar'},
-        )
-        tags = (
+        ]
+        tags = [
             'more',
             {'andmore': 'bar'},
-        )
+        ]
         metric_id = self.datastream.ensure_metric(query_tags, tags, self.downsamplers, datastream.Granularity.Seconds)
 
         metric = datastream.Metric(self.datastream.get_tags(metric_id))
         self.assertEqual(metric.id, metric_id)
         self.assertItemsEqual(metric.downsamplers, self.downsamplers)
         self.assertEqual(metric.highest_granularity, datastream.Granularity.Seconds)
+        self.assertItemsEqual(metric.tags, query_tags + tags)
+
+        # Test metric tag manipulation
+        rm_tags = self.datastream.get_tags(metric_id)
+        self.datastream.remove_tag(metric_id, 'more')
+        new_tags = self.datastream.get_tags(metric_id)
+        rm_tags.remove('more')
+        self.assertItemsEqual(new_tags, rm_tags)
+
+        self.datastream.clear_tags(metric_id)
+        metric = datastream.Metric(self.datastream.get_tags(metric_id))
+        self.assertItemsEqual(metric.tags, [])
+
+        self.datastream.update_tags(metric_id, query_tags + tags)
+        metric = datastream.Metric(self.datastream.get_tags(metric_id))
         self.assertItemsEqual(metric.tags, query_tags + tags)
 
         # Should not do anything
@@ -39,7 +54,7 @@ class BasicTest(object):
         data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0))
         self.assertItemsEqual(data, [])
 
-        # Artificially incriease backend time for a minute so that downsample will do something for minute granularity
+        # Artificially increase backend time for a minute so that downsample will do something for minute granularity
         self.datastream.backend._time_offset += datetime.timedelta(minutes=1)
 
         self.datastream.downsample_metrics()

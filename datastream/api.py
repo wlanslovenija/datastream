@@ -185,8 +185,7 @@ class Datastream(object):
         :param tag: Tag value to remove
         """
 
-        # TODO: Implement
-        raise NotImplementedError
+        return self.backend.remove_tag(metric_id, tag)
 
     def clear_tags(self, metric_id):
         """
@@ -198,8 +197,7 @@ class Datastream(object):
         :param metric_id: Metric identifier
         """
 
-        # TODO: Implement
-        raise NotImplementedError
+        return self.backend.clear_tags(metric_id)
 
     def find_metrics(self, query_tags=None):
         """
