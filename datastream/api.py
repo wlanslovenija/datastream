@@ -86,11 +86,13 @@ DOWNSAMPLERS = {
 }
 
 class Datastream(object):
-    def __init__(self, backend):
+    # TODO: Implement support for callback
+    def __init__(self, backend, callback=None):
         """
         Class constructor.
 
         :param backend: Backend instance
+        :param callback: Callback to call when new datapoint is inserted or downsampled
         """
 
         self.backend = backend
@@ -136,6 +138,30 @@ class Datastream(object):
         """
 
         return self.backend.update_tags(metric_id, tags)
+
+    def remove_tag(self, metric_id, tag):
+        """
+        Removes metric tag.
+
+        :param metric_id: Metric identifier
+        :param tag: Tag value to remove
+        """
+
+        # TODO: Implement
+        raise NotImplementedError
+
+    def clear_tags(self, metric_id):
+        """
+        Removes (clears) all non-readonly metric tags.
+
+        Care should be taken that some tags are set immediately afterwards which uniquely
+        identify a metric to be able to use query the metric, in for example, `ensure_metric`.
+
+        :param metric_id: Metric identifier
+        """
+
+        # TODO: Implement
+        raise NotImplementedError
 
     def find_metrics(self, query_tags=None):
         """

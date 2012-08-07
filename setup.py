@@ -4,7 +4,7 @@ import os
 
 from setuptools import setup, find_packages
 
-VERSION = '0.1'
+VERSION = '0.1.1'
 
 if __name__ == '__main__':
     setup(
@@ -28,7 +28,8 @@ if __name__ == '__main__':
         include_package_data = True,
         zip_safe = False,
         install_requires = [
-            'mongoengine>=0.6.18',
+            # 0.6.19 has broken UUID field, we are waiting for new version
+            'mongoengine==0.6.18',
             'pymongo>=2.2.1',
         ],
         test_suite = 'tests',
