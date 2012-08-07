@@ -72,8 +72,8 @@ class MongoDBBasicTest(BasicTest, unittest.TestCase):
     database_name = 'test_database'
 
     def setUp(self):
-        self.downsamplers = mongodb.Backend.downsamplers
         self.datastream = datastream.Datastream(mongodb.Backend(self.database_name))
+        self.downsamplers = self.datastream.backend.samplers
 
     def tearDown(self):
         db = mongoengine.connection.get_db(mongodb.DATABASE_ALIAS)

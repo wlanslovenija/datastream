@@ -65,11 +65,44 @@ assert len(set(granularity._order for granularity in Granularity.values)) == len
 
 assert Granularity.Seconds > Granularity.Minutes > Granularity.Hours > Granularity.Days
 
+class Metric(object):
+    def __init__(self, all_tags):
+        tags = []
+        for tag in all_tags:
+            try:
+                self.id = tag['metric_id']
+                continue
+            except (ValueError, KeyError, TypeError):
+                pass
+
+            try:
+                self.downsamplers = tag['downsamplers']
+                continue
+            except (ValueError, KeyError, TypeError):
+                pass
+
+            try:
+                self.highest_granularity = tag['highest_granularity']
+                continue
+            except (ValueError, KeyError, TypeError):
+                pass
+
+            tags.append(tag)
+
+        self.tags = tags
+
+        if not hasattr(self, 'id'):
+            raise ValueError("Supplied tags are missing 'metric_id'.")
+        if not hasattr(self, 'downsamplers'):
+            raise ValueError("Supplied tags are missing 'downsamplers'.")
+        if not hasattr(self, 'highest_granularity'):
+            raise ValueError("Supplied tags are missing 'highest_granularity'.")
+
 RESERVED_TAGS = (
     'metric_id',
     'downsamplers',
     'highest_granularity',
-)
+    )
 
 DOWNSAMPLERS = {
     'mean': 'm', # average of all datapoints
@@ -86,6 +119,11 @@ DOWNSAMPLERS = {
 }
 
 class Datastream(object):
+    Granularity = Granularity
+    Metric = Metric
+    RESERVED_TAGS = RESERVED_TAGS
+    DOWNSAMPLERS = DOWNSAMPLERS
+
     # TODO: Implement support for callback
     def __init__(self, backend, callback=None):
         """
@@ -214,36 +252,3 @@ class Datastream(object):
         """
 
         return self.backend.downsample_metrics(query_tags)
-
-class Metric(object):
-    def __init__(self, all_tags):
-        tags = []
-        for tag in all_tags:
-            try:
-                self.id = tag['metric_id']
-                continue
-            except (ValueError, KeyError, TypeError):
-                pass
-
-            try:
-                self.downsamplers = tag['downsamplers']
-                continue
-            except (ValueError, KeyError, TypeError):
-                pass
-
-            try:
-                self.highest_granularity = tag['highest_granularity']
-                continue
-            except (ValueError, KeyError, TypeError):
-                pass
-
-            tags.append(tag)
-
-        self.tags = tags
-
-        if not hasattr(self, 'id'):
-            raise ValueError("Supplied tags are missing 'metric_id'.")
-        if not hasattr(self, 'downsamplers'):
-            raise ValueError("Supplied tags are missing 'downsamplers'.")
-        if not hasattr(self, 'highest_granularity'):
-            raise ValueError("Supplied tags are missing 'highest_granularity'.")
