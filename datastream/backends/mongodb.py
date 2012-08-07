@@ -231,7 +231,13 @@ class Backend(object):
         # Setup the database connection to MongoDB
         mongoengine.connect(database_name, DATABASE_ALIAS, **connection_settings)
 
-        assert set(sum([[downsampler.name] + list(getattr(downsampler, 'dependencies', ())) for downsampler in Downsamplers.values], [])) <= set(api.DOWNSAMPLERS.keys())
+        assert \
+            set(
+                sum([
+                    [downsampler.name] + list(getattr(downsampler, 'dependencies', ())) \
+                    for downsampler in Downsamplers.values
+                ], [])
+            ) <= set(api.DOWNSAMPLERS.keys())
 
         # Ensure indices on datapoints collections
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
