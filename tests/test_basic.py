@@ -57,14 +57,14 @@ class BasicTest(object):
         data = self.datastream.get_data(metric_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
         self.assertEqual(len(data), 1)
 
-        data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0))
-        self.assertItemsEqual(data, [])
-
         self.assertEqual(len(self._callback_points), 1)
         cb_metric_id, cb_granularity, cb_datapoint = self._callback_points[0]
         self.assertEqual(cb_metric_id, metric_id)
         self.assertEqual(cb_granularity, datastream.Granularity.Seconds)
-        self.assertEqual(cb_datapoint['v'], 42)
+        self.assertItemsEqual(cb_datapoint, data[0])
+
+        data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0))
+        self.assertItemsEqual(data, [])
 
         # Artificially increase backend time for a minute so that downsample will do something for minute granularity
         self.datastream.backend._time_offset += datetime.timedelta(minutes=1)

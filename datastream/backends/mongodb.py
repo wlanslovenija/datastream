@@ -544,7 +544,7 @@ class Backend(object):
             object_id = self._generate_test_object_id()
             datapoint = { '_id' : object_id, 'm' : metric.id, 'v' : value }
 
-        collection.insert(datapoint, safe = True)
+        datapoint['_id'] = collection.insert(datapoint, safe = True)
         self._callback(metric.external_id, metric.highest_granularity, datapoint)
 
     def _format_datapoint(self, datapoint):
@@ -556,7 +556,7 @@ class Backend(object):
         """
 
         return {
-            't' : datapoint['_id'].generation_time if 't' not in datapoint else datapoint['t'],
+            't' : datapoint.get('t', datapoint['_id'].generation_time),
             'v' : datapoint['v']
         }
 
