@@ -14,9 +14,9 @@ MAXIMUM_INTEGER = 2**63 - 1
 
 ZERO_TIMEDELTA = datetime.timedelta()
 
-class Downsamplers(object):
+class DownsamplersBase(object):
     """
-    A container of downsampler classes.
+    Base class for downsampler containers.
     """
 
     class _Base(object):
@@ -26,9 +26,6 @@ class Downsamplers(object):
 
         name = None
         key = None
-
-        def __init__(self):
-            self.key = api.DOWNSAMPLERS[self.name]
 
         def initialize(self):
             pass
@@ -41,6 +38,30 @@ class Downsamplers(object):
 
         def postprocess(self, values):
             pass
+
+    @utils.class_property
+    def values(cls):
+        if not hasattr(cls, '_values'):
+            cls._values = tuple([
+                getattr(cls, name) for name in cls.__dict__ if \
+                    name != 'values' and inspect.isclass(getattr(cls, name)) and \
+                    getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)
+            ])
+
+        return cls._values
+
+class ValueDownsamplers(DownsamplersBase):
+    """
+    A container of downsampler classes for datapoint values.
+    """
+
+    class _Base(DownsamplersBase._Base):
+        """
+        Base class for value downsamplers.
+        """
+
+        def __init__(self):
+            self.key = api.VALUE_DOWNSAMPLERS[self.name]
 
     class Count(_Base):
         """
@@ -143,7 +164,7 @@ class Downsamplers(object):
 
         def postprocess(self, values):
             assert 'm' not in values
-            values[self.key] = float(values[api.DOWNSAMPLERS['sum']]) / values[api.DOWNSAMPLERS['count']]
+            values[self.key] = float(values[api.VALUE_DOWNSAMPLERS['sum']]) / values[api.VALUE_DOWNSAMPLERS['count']]
 
     class StdDev(_Base):
         """
@@ -155,9 +176,9 @@ class Downsamplers(object):
         dependencies = ('sum', 'count', 'sum_squares')
 
         def postprocess(self, values):
-            n = float(values[api.DOWNSAMPLERS['count']])
-            s = float(values[api.DOWNSAMPLERS['sum']])
-            ss = float(values[api.DOWNSAMPLERS['sum_squares']])
+            n = float(values[api.VALUE_DOWNSAMPLERS['count']])
+            s = float(values[api.VALUE_DOWNSAMPLERS['sum']])
+            ss = float(values[api.VALUE_DOWNSAMPLERS['sum_squares']])
             assert self.key not in values
             
             if n == 1:
@@ -165,16 +186,75 @@ class Downsamplers(object):
             else:
                 values[self.key] = (n * ss - s**2) / (n * (n - 1))
 
-    @utils.class_property
-    def values(cls):
-        if not hasattr(cls, '_values'):
-            cls._values = tuple([
-                getattr(cls, name) for name in cls.__dict__ if \
-                    name != 'values' and inspect.isclass(getattr(cls, name)) and \
-                    getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)
-            ])
+class TimeDownsamplers(DownsamplersBase):
+    """
+    A container of downsampler classes for datapoint timestamps.
+    """
 
-        return cls._values
+    class _Base(DownsamplersBase._Base):
+        """
+        Base class for time downsamplers.
+        """
+
+        def __init__(self):
+            self.key = api.TIME_DOWNSAMPLERS[self.name]
+
+        def _to_datetime(self, timestamp):
+            return datetime.datetime.utcfromtimestamp(int(timestamp))
+
+    class Mean(_Base):
+        """
+        Computes the mean timestamp.
+        """
+
+        name = 'mean'
+
+        def initialize(self):
+            self.count = 0
+            self.sum = 0
+
+        def update(self, datum):
+            self.count += 1
+            self.sum += datum
+
+        def finish(self, output):
+            assert self.key not in output
+            output[self.key] = self._to_datetime(float(self.sum) / self.count)
+
+    class First(_Base):
+        """
+        Stores the first timestamp in the interval.
+        """
+
+        name = 'first'
+
+        def initialize(self):
+            self.first = None
+
+        def update(self, datum):
+            if self.first is None:
+                self.first = datum
+
+        def finish(self, output):
+            assert self.key not in output
+            output[self.key] = self._to_datetime(self.first)
+
+    class Last(_Base):
+        """
+        Stores the last timestamp in the interval.
+        """
+
+        name = 'last'
+
+        def initialize(self):
+            self.last = None
+
+        def update(self, datum):
+            self.last = datum
+
+        def finish(self, output):
+            assert self.key not in output
+            output[self.key] = self._to_datetime(self.last)
 
 class GranularityField(mongoengine.StringField):
     def __init__(self, **kwargs):
@@ -204,7 +284,7 @@ class Metric(mongoengine.Document):
     id = mongoengine.SequenceField(primary_key = True, db_alias = DATABASE_ALIAS)
     external_id = mongoengine.UUIDField()
     downsamplers = mongoengine.ListField(mongoengine.StringField(
-        choices = [downsampler.name for downsampler in Downsamplers.values],
+        choices = [downsampler.name for downsampler in ValueDownsamplers.values],
     ))
     downsample_state = mongoengine.MapField(mongoengine.EmbeddedDocumentField(DownsampleState))
     highest_granularity = GranularityField()
@@ -218,7 +298,8 @@ class Metric(mongoengine.Document):
     )
 
 class Backend(object):
-    downsamplers = set([downsampler.name for downsampler in Downsamplers.values])
+    value_downsamplers = set([downsampler.name for downsampler in ValueDownsamplers.values])
+    time_downsamplers = set([downsampler.name for downsampler in TimeDownsamplers.values])
 
     def __init__(self, database_name, **connection_settings):
         """
@@ -235,9 +316,9 @@ class Backend(object):
             set(
                 sum([
                     [downsampler.name] + list(getattr(downsampler, 'dependencies', ())) \
-                    for downsampler in Downsamplers.values
+                    for downsampler in ValueDownsamplers.values
                 ], [])
-            ) <= set(api.DOWNSAMPLERS.keys())
+            ) <= set(api.VALUE_DOWNSAMPLERS.keys())
 
         # Ensure indices on datapoints collections
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
@@ -296,13 +377,13 @@ class Backend(object):
             # Some downsampling functions don't need to be stored in the database but
             # can be computed on the fly from other downsampled values
             downsamplers = set(downsamplers)
-            for downsampler in Downsamplers.values:
+            for downsampler in ValueDownsamplers.values:
                 if downsampler.name in downsamplers and hasattr(downsampler, 'dependencies'):
                     downsamplers.update(downsampler.dependencies)
 
-            if not downsamplers <= self.downsamplers:
+            if not downsamplers <= self.value_downsamplers:
                 raise exceptions.UnsupportedDownsampler(
-                    "Unsupported downsampler(s): %s" % list(downsamplers - self.downsamplers),
+                    "Unsupported downsampler(s): %s" % list(downsamplers - self.value_downsamplers),
                 )
 
             # This should already be checked at the API level
@@ -474,12 +555,12 @@ class Backend(object):
 
         if downsamplers is not None:
             downsamplers = set(downsamplers)
-            if not downsamplers <= self.downsamplers:
+            if not downsamplers <= self.value_downsamplers:
                 raise exceptions.UnsupportedDownsampler(
-                    "Unsupported downsampler(s): %s" % list(downsamplers - self.downsamplers),
+                    "Unsupported downsampler(s): %s" % list(downsamplers - self.value_downsamplers),
                 )
 
-            downsamplers = ['v.%s' % api.DOWNSAMPLERS[d] for d in downsamplers]
+            downsamplers = ['v.%s' % api.VALUE_DOWNSAMPLERS[d] for d in downsamplers]
 
         # Get the datapoints
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
@@ -501,7 +582,13 @@ class Backend(object):
             'm' : metric.id,
         }, downsamplers).sort('_id')
 
-        return [{ 't' : x['_id'].generation_time, 'v' : x['v'] } for x in pts]
+        return [
+            {
+                't' : x['_id'].generation_time if 't' not in x else x['t'],
+                'v' : x['v']
+            }
+            for x in pts
+        ]
 
     def downsample_metrics(self, query_tags=None):
         """
@@ -623,28 +710,38 @@ class Backend(object):
             })
 
         # Construct downsampler instances
-        downsamplers = []
-        for downsampler in Downsamplers.values:
+        value_downsamplers = []
+        for downsampler in ValueDownsamplers.values:
             if downsampler.name in metric.downsamplers:
-                downsamplers.append(downsampler())
+                value_downsamplers.append(downsampler())
+
+        time_downsamplers = []
+        for downsampler in TimeDownsamplers.values:
+            time_downsamplers.append(downsampler())
 
         # Pack metric identifier to be used for object id generation
         metric_id = struct.pack('>Q', metric.id)
 
         def store_downsampled_datapoint():
             value = {}
-            for x in downsamplers:
+            time = {}
+            for x in value_downsamplers:
                 x.finish(value)
+            for x in time_downsamplers:
+                x.finish(time)
 
-            for x in downsamplers:
+            for x in value_downsamplers:
                 x.postprocess(value)
                 x.initialize()
+            for x in time_downsamplers:
+                x.postprocess(time)
+                x.initialize()
 
-            # Insert downsampled value
+            # Insert downsampled datapoint
             point_id = self._generate_timed_object_id(rounded_timestamp, metric_id)
             downsampled_points.update(
                 { '_id' : point_id, 'm' : metric.id },
-                { '_id' : point_id, 'm' : metric.id, 'v' : value },
+                { '_id' : point_id, 'm' : metric.id, 'v' : value, 't' : time },
                 upsert = True,
                 safe = True,
             )
@@ -655,7 +752,7 @@ class Backend(object):
             ts = datapoint['_id'].generation_time
             rounded_timestamp = self._round_downsampled_timestamp(ts, granularity)
             if last_timestamp is None:
-                for x in downsamplers:
+                for x in value_downsamplers + time_downsamplers:
                     x.initialize()
             elif last_timestamp != rounded_timestamp:
                 store_downsampled_datapoint()
@@ -663,8 +760,10 @@ class Backend(object):
             last_timestamp = rounded_timestamp
 
             # Update all downsamplers for the current datapoint
-            for x in downsamplers:
+            for x in value_downsamplers:
                 x.update(datapoint['v'])
+            for x in time_downsamplers:
+                x.update(int(calendar.timegm(ts.timetuple())))
 
         # Don't forget to store the last downsampled datapoint
         store_downsampled_datapoint()

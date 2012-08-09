@@ -14,11 +14,11 @@ class BasicTest(object):
             'more',
             {'andmore': 'bar'},
         ]
-        metric_id = self.datastream.ensure_metric(query_tags, tags, self.downsamplers, datastream.Granularity.Seconds)
+        metric_id = self.datastream.ensure_metric(query_tags, tags, self.value_downsamplers, datastream.Granularity.Seconds)
 
         metric = datastream.Metric(self.datastream.get_tags(metric_id))
         self.assertEqual(metric.id, metric_id)
-        self.assertItemsEqual(metric.downsamplers, self.downsamplers)
+        self.assertItemsEqual(metric.downsamplers, self.value_downsamplers)
         self.assertEqual(metric.highest_granularity, datastream.Granularity.Seconds)
         self.assertItemsEqual(metric.tags, query_tags + tags)
 
@@ -67,28 +67,32 @@ class BasicTest(object):
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]['v'], 42)
 
-        downsamplers_keys = [datastream.DOWNSAMPLERS[d] for d in self.downsamplers]
+        value_downsamplers_keys = [datastream.VALUE_DOWNSAMPLERS[d] for d in self.value_downsamplers]
+        time_downsamplers_keys = [datastream.TIME_DOWNSAMPLERS[d] for d in self.time_downsamplers]
 
         data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()) + self.datastream.backend._time_offset)
         self.assertEqual(len(data), 1)
-        self.assertItemsEqual(data[0]['v'].keys(), downsamplers_keys)
+        self.assertItemsEqual(data[0]['v'].keys(), value_downsamplers_keys)
+        self.assertItemsEqual(data[0]['t'].keys(), time_downsamplers_keys)
 
         data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0))
         self.assertEqual(len(data), 1)
-        self.assertItemsEqual(data[0]['v'].keys(), downsamplers_keys)
-        self.assertTrue(datastream.DOWNSAMPLERS['count'] in data[0]['v'].keys())
+        self.assertItemsEqual(data[0]['v'].keys(), value_downsamplers_keys)
+        self.assertItemsEqual(data[0]['t'].keys(), time_downsamplers_keys)
+        self.assertTrue(datastream.VALUE_DOWNSAMPLERS['count'] in data[0]['v'].keys())
 
         data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0), downsamplers=('count',))
         self.assertEqual(len(data), 1)
-        self.assertItemsEqual(data[0]['v'].keys(), (datastream.DOWNSAMPLERS['count'],))
-        self.assertEqual(data[0]['v'][datastream.DOWNSAMPLERS['count']], 1)
+        self.assertItemsEqual(data[0]['v'].keys(), (datastream.VALUE_DOWNSAMPLERS['count'],))
+        self.assertEqual(data[0]['v'][datastream.VALUE_DOWNSAMPLERS['count']], 1)
 
 class MongoDBBasicTest(BasicTest, unittest.TestCase):
     database_name = 'test_database'
 
     def setUp(self):
         self.datastream = datastream.Datastream(mongodb.Backend(self.database_name))
-        self.downsamplers = self.datastream.backend.downsamplers
+        self.value_downsamplers = self.datastream.backend.value_downsamplers
+        self.time_downsamplers = self.datastream.backend.time_downsamplers
 
     def tearDown(self):
         db = mongoengine.connection.get_db(mongodb.DATABASE_ALIAS)

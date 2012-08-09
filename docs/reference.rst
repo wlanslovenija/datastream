@@ -48,8 +48,8 @@ TODO: Describe how downsampled metadata is stored and updated by downsampling fu
 .. autoclass:: datastream.backends.mongodb.Backend
 
 
-Downsamplers
-------------
+Value downsamplers
+------------------
 
 .. method:: mean(key: m)
 
@@ -94,6 +94,26 @@ Downsamplers
 .. method:: frequencies(key: f)
 
     for each value number of occurrences in all datapoints
+
+
+Time downsamplers
+-----------------
+
+.. method:: mean(key: m)
+
+    average of all timestamps
+
+.. method:: median(key: e)
+
+    median of all timestamps
+
+.. method:: first(key: f)
+
+    first timestamp in the interval
+
+.. method:: last(key: l)
+
+    last timestamp in the interval
 
 
 Exceptions

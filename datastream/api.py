@@ -104,7 +104,7 @@ RESERVED_TAGS = (
     'highest_granularity',
     )
 
-DOWNSAMPLERS = {
+VALUE_DOWNSAMPLERS = {
     'mean': 'm', # average of all datapoints
     'median': 'e', # median of all datapoints
     'sum': 's', # sum of all datapoints
@@ -118,11 +118,19 @@ DOWNSAMPLERS = {
     'frequencies': 'f', # for each value number of occurrences in all datapoints
 }
 
+TIME_DOWNSAMPLERS = {
+    'mean': 'm', # average of all timestamps
+    'median': 'e', # median of all timestamps
+    'first': 'f', # first timestamp in the interval
+    'last': 'l', # last timestamp in the interval
+}
+
 class Datastream(object):
     Granularity = Granularity
     Metric = Metric
     RESERVED_TAGS = RESERVED_TAGS
-    DOWNSAMPLERS = DOWNSAMPLERS
+    VALUE_DOWNSAMPLERS = VALUE_DOWNSAMPLERS
+    TIME_DOWNSAMPLERS = TIME_DOWNSAMPLERS
 
     # TODO: Implement support for callback
     def __init__(self, backend, callback=None):
@@ -151,7 +159,7 @@ class Datastream(object):
         if highest_granularity not in Granularity.values:
             raise exceptions.UnsupportedGranularity("'highest_granularity' is not a valid value: '%s'" % highest_granularity)
 
-        unsupported_downsamplers = list(set(downsamplers) - set(DOWNSAMPLERS.keys()))
+        unsupported_downsamplers = list(set(downsamplers) - set(VALUE_DOWNSAMPLERS.keys()))
         if len(unsupported_downsamplers) > 0:
             raise exceptions.UnsupportedDownsampler("Unsupported downsampler(s): %s" % unsupported_downsamplers)
 
@@ -235,7 +243,7 @@ class Datastream(object):
             raise exceptions.UnsupportedGranularity("'granularity' is not a valid value: '%s'" % granularity)
 
         if downsamplers is not None:
-            unsupported_downsamplers = set(downsamplers) - set(DOWNSAMPLERS.keys())
+            unsupported_downsamplers = set(downsamplers) - set(VALUE_DOWNSAMPLERS.keys())
             if len(unsupported_downsamplers) > 0:
                 raise exceptions.UnsupportedDownsampler("Unsupported downsampler(s): %s" % unsupported_downsamplers)
 
