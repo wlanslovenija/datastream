@@ -102,7 +102,7 @@ RESERVED_TAGS = (
     'metric_id',
     'downsamplers',
     'highest_granularity',
-    )
+)
 
 VALUE_DOWNSAMPLERS = {
     'mean': 'm', # average of all datapoints
@@ -118,11 +118,18 @@ VALUE_DOWNSAMPLERS = {
     'frequencies': 'f', # for each value number of occurrences in all datapoints
 }
 
+# Count of timestamps is the same as count of values
 TIME_DOWNSAMPLERS = {
     'mean': 'm', # average of all timestamps
     'median': 'e', # median of all timestamps
-    'first': 'f', # first timestamp in the interval
-    'last': 'l', # last timestamp in the interval
+    'first': 'a', # the first timestamp of all datapoints (key mnemonic: a is the first in the alphabet)
+    'last': 'z', # the last timestamp of all datapoints (key mnemonic: z is the last in the alphabet)
+    'intervals_mean': 'i', # average of all interval lengths (key mnemonic: i for interval)
+    'intervals_median': 'n', # median of all interval lengths (key mnemonic: mediaN)
+    'intervals_min': 'l', # minimum of all interval lengths (key mnemonic: l for lower)
+    'intervals_max': 'u', # maximum of all interval lengths (key mnemonic: u for upper)
+    'intervals_sum_squares': 'q', # sum of squares of all interval lengths
+    'intervals_std_dev': 'd', # standard deviation of all interval lengths
 }
 
 class Datastream(object):
@@ -228,7 +235,7 @@ class Datastream(object):
 
         return self.backend.insert(metric_id, value)
 
-    def get_data(self, metric_id, granularity, start, end=None, downsamplers=None):
+    def get_data(self, metric_id, granularity, start, end=None, value_downsamplers=None, time_downsamplers=None):
         """
         Retrieves data from a certain time range and of a certain granularity.
 
@@ -236,19 +243,25 @@ class Datastream(object):
         :param granularity: Wanted granularity
         :param start: Time range start
         :param end: Time range end (optional)
-        :param downsamplers: The list of downsamplers to limit datapoint values to (optional)
+        :param value_downsamplers: The list of downsamplers to limit datapoint values to (optional)
+        :param time_downsamplers: The list of downsamplers to limit timestamp values to (optional)
         :return: A list of datapoints
         """
 
         if granularity not in Granularity.values:
             raise exceptions.UnsupportedGranularity("'granularity' is not a valid value: '%s'" % granularity)
 
-        if downsamplers is not None:
-            unsupported_downsamplers = set(downsamplers) - set(VALUE_DOWNSAMPLERS.keys())
+        if value_downsamplers is not None:
+            unsupported_downsamplers = set(value_downsamplers) - set(VALUE_DOWNSAMPLERS.keys())
             if len(unsupported_downsamplers) > 0:
-                raise exceptions.UnsupportedDownsampler("Unsupported downsampler(s): %s" % unsupported_downsamplers)
+                raise exceptions.UnsupportedDownsampler("Unsupported value downsampler(s): %s" % unsupported_downsamplers)
 
-        return self.backend.get_data(metric_id, granularity, start, end, downsamplers)
+        if time_downsamplers is not None:
+            unsupported_downsamplers = set(time_downsamplers) - set(TIME_DOWNSAMPLERS.keys())
+            if len(unsupported_downsamplers) > 0:
+                raise exceptions.UnsupportedDownsampler("Unsupported time downsampler(s): %s" % unsupported_downsamplers)
+
+        return self.backend.get_data(metric_id, granularity, start, end, value_downsamplers, time_downsamplers)
 
     def downsample_metrics(self, query_tags=None):
         """

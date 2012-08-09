@@ -560,7 +560,7 @@ class Backend(object):
             'v' : datapoint['v']
         }
 
-    def get_data(self, metric_id, granularity, start, end=None, downsamplers=None):
+    def get_data(self, metric_id, granularity, start, end=None, value_downsamplers=None, time_downsamplers=None):
         """
         Retrieves data from a certain time range and of a certain granularity.
 
@@ -568,7 +568,8 @@ class Backend(object):
         :param granularity: Wanted granularity
         :param start: Time range start
         :param end: Time range end (optional)
-        :param downsamplers: The list of downsamplers to limit datapoint values to (optional)
+        :param value_downsamplers: The list of downsamplers to limit datapoint values to (optional)
+        :param time_downsamplers: The list of downsamplers to limit timestamp values to (optional)
         :return: A list of datapoints
         """
 
@@ -585,16 +586,31 @@ class Backend(object):
 
         if granularity == metric.highest_granularity:
             # On highest granularity downsamplers are not used
-            downsamplers = None
+            value_downsamplers = None
+            time_downsamplers = None
 
-        if downsamplers is not None:
-            downsamplers = set(downsamplers)
-            if not downsamplers <= self.value_downsamplers:
+        downsamplers = []
+
+        if value_downsamplers is not None:
+            value_downsamplers = set(value_downsamplers)
+            if not value_downsamplers <= self.value_downsamplers:
                 raise exceptions.UnsupportedDownsampler(
-                    "Unsupported downsampler(s): %s" % list(downsamplers - self.value_downsamplers),
+                    "Unsupported value downsampler(s): %s" % list(value_downsamplers - self.value_downsamplers),
                 )
 
-            downsamplers = ['v.%s' % api.VALUE_DOWNSAMPLERS[d] for d in downsamplers]
+            downsamplers += ['v.%s' % api.VALUE_DOWNSAMPLERS[d] for d in value_downsamplers]
+
+        if time_downsamplers is not None:
+            time_downsamplers = set(time_downsamplers)
+            if not time_downsamplers <= self.time_downsamplers:
+                raise exceptions.UnsupportedDownsampler(
+                    "Unsupported time downsampler(s): %s" % list(time_downsamplers - self.time_downsamplers),
+                )
+
+            downsamplers += ['t.%s' % api.TIME_DOWNSAMPLERS[d] for d in time_downsamplers]
+
+        if downsamplers == []:
+            downsamplers = None
 
         # Get the datapoints
         db = mongoengine.connection.get_db(DATABASE_ALIAS)

@@ -99,7 +99,7 @@ class BasicTest(object):
         self.assertItemsEqual(data[0]['t'].keys(), time_downsamplers_keys)
         self.assertTrue(datastream.VALUE_DOWNSAMPLERS['count'] in data[0]['v'].keys())
 
-        data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0), downsamplers=('count',))
+        data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0), value_downsamplers=('count',))
         self.assertEqual(len(data), 1)
         self.assertItemsEqual(data[0]['v'].keys(), (datastream.VALUE_DOWNSAMPLERS['count'],))
         self.assertEqual(data[0]['v'][datastream.VALUE_DOWNSAMPLERS['count']], 1)
