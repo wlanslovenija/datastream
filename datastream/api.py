@@ -76,7 +76,13 @@ class Metric(object):
                 pass
 
             try:
-                self.downsamplers = tag['downsamplers']
+                self.value_downsamplers = tag['value_downsamplers']
+                continue
+            except (ValueError, KeyError, TypeError):
+                pass
+
+            try:
+                self.time_downsamplers = tag['time_downsamplers']
                 continue
             except (ValueError, KeyError, TypeError):
                 pass
@@ -93,14 +99,17 @@ class Metric(object):
 
         if not hasattr(self, 'id'):
             raise ValueError("Supplied tags are missing 'metric_id'.")
-        if not hasattr(self, 'downsamplers'):
-            raise ValueError("Supplied tags are missing 'downsamplers'.")
+        if not hasattr(self, 'value_downsamplers'):
+            raise ValueError("Supplied tags are missing 'value_downsamplers'.")
+        if not hasattr(self, 'time_downsamplers'):
+            raise ValueError("Supplied tags are missing 'time_downsamplers'.")
         if not hasattr(self, 'highest_granularity'):
             raise ValueError("Supplied tags are missing 'highest_granularity'.")
 
 RESERVED_TAGS = (
     'metric_id',
-    'downsamplers',
+    'value_downsamplers',
+    'time_downsamplers',
     'highest_granularity',
 )
 
@@ -151,14 +160,14 @@ class Datastream(object):
         self.backend = backend
         self.backend.set_callback(callback)
 
-    def ensure_metric(self, query_tags, tags, downsamplers, highest_granularity):
+    def ensure_metric(self, query_tags, tags, value_downsamplers, highest_granularity):
         """
         Ensures that a specified metric exists.
 
         :param query_tags: Tags which uniquely identify a metric
         :param tags: Tags that should be used (together with `query_tags`) to create a
                      metric when it doesn't yet exist
-        :param downsamplers: A set of names of downsampler functions for this metric
+        :param value_downsamplers: A set of names of value downsampler functions for this metric
         :param highest_granularity: Predicted highest granularity of the data the metric
                                     will store, may be used to optimize data storage
         :return: A metric identifier
@@ -167,11 +176,11 @@ class Datastream(object):
         if highest_granularity not in Granularity.values:
             raise exceptions.UnsupportedGranularity("'highest_granularity' is not a valid value: '%s'" % highest_granularity)
 
-        unsupported_downsamplers = list(set(downsamplers) - set(VALUE_DOWNSAMPLERS.keys()))
+        unsupported_downsamplers = list(set(value_downsamplers) - set(VALUE_DOWNSAMPLERS.keys()))
         if len(unsupported_downsamplers) > 0:
-            raise exceptions.UnsupportedDownsampler("Unsupported downsampler(s): %s" % unsupported_downsamplers)
+            raise exceptions.UnsupportedDownsampler("Unsupported value downsampler(s): %s" % unsupported_downsamplers)
 
-        return self.backend.ensure_metric(query_tags, tags, downsamplers, highest_granularity)
+        return self.backend.ensure_metric(query_tags, tags, value_downsamplers, highest_granularity)
 
     def get_tags(self, metric_id):
         """

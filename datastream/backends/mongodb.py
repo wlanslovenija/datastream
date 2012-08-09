@@ -1,4 +1,4 @@
-import calendar, datetime, inspect, os, struct, uuid
+import calendar, datetime, inspect, os, struct, time, uuid
 
 import pymongo
 from bson import objectid
@@ -283,7 +283,7 @@ class DownsampleState(mongoengine.EmbeddedDocument):
 class Metric(mongoengine.Document):
     id = mongoengine.SequenceField(primary_key = True, db_alias = DATABASE_ALIAS)
     external_id = mongoengine.UUIDField()
-    downsamplers = mongoengine.ListField(mongoengine.StringField(
+    value_downsamplers = mongoengine.ListField(mongoengine.StringField(
         choices = [downsampler.name for downsampler in ValueDownsamplers.values],
     ))
     downsample_state = mongoengine.MapField(mongoengine.EmbeddedDocumentField(DownsampleState))
@@ -319,6 +319,14 @@ class Backend(object):
                     for downsampler in ValueDownsamplers.values
                 ], [])
             ) <= set(api.VALUE_DOWNSAMPLERS.keys())
+
+        assert \
+            set(
+                sum([
+                    [downsampler.name] + list(getattr(downsampler, 'dependencies', ())) \
+                    for downsampler in TimeDownsamplers.values
+                ], [])
+            ) <= set(api.TIME_DOWNSAMPLERS.keys())
 
         # Ensure indices on datapoints collections
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
@@ -372,14 +380,14 @@ class Backend(object):
 
         return converted_tags
 
-    def ensure_metric(self, query_tags, tags, downsamplers, highest_granularity):
+    def ensure_metric(self, query_tags, tags, value_downsamplers, highest_granularity):
         """
         Ensures that a specified metric exists.
 
         :param query_tags: Tags which uniquely identify a metric
         :param tags: Tags that should be used (together with `query_tags`) to create a
                      metric when it doesn't yet exist
-        :param downsamplers: A set of names of downsampler functions for this metric
+        :param value_downsamplers: A set of names of value downsampler functions for this metric
         :param highest_granularity: Predicted highest granularity of the data the metric
                                     will store, may be used to optimize data storage
         :return: A metric identifier
@@ -394,20 +402,20 @@ class Backend(object):
 
             # Some downsampling functions don't need to be stored in the database but
             # can be computed on the fly from other downsampled values
-            downsamplers = set(downsamplers)
+            value_downsamplers = set(value_downsamplers)
             for downsampler in ValueDownsamplers.values:
-                if downsampler.name in downsamplers and hasattr(downsampler, 'dependencies'):
-                    downsamplers.update(downsampler.dependencies)
+                if downsampler.name in value_downsamplers and hasattr(downsampler, 'dependencies'):
+                    value_downsamplers.update(downsampler.dependencies)
 
-            if not downsamplers <= self.value_downsamplers:
+            if not value_downsamplers <= self.value_downsamplers:
                 raise exceptions.UnsupportedDownsampler(
-                    "Unsupported downsampler(s): %s" % list(downsamplers - self.value_downsamplers),
+                    "Unsupported value downsampler(s): %s" % list(value_downsamplers - self.value_downsamplers),
                 )
 
             # This should already be checked at the API level
             assert highest_granularity in api.Granularity.values
 
-            metric.downsamplers = list(downsamplers)
+            metric.value_downsamplers = list(value_downsamplers)
             metric.highest_granularity = highest_granularity
             metric.tags = list(self._process_tags(query_tags).union(self._process_tags(tags)))
 
@@ -435,7 +443,8 @@ class Backend(object):
         tags = metric.tags
         tags += [
             { 'metric_id' : unicode(metric.external_id) },
-            { 'downsamplers' : metric.downsamplers },
+            { 'value_downsamplers' : metric.value_downsamplers },
+            { 'time_downsamplers' : self.time_downsamplers },
             { 'highest_granularity' : metric.highest_granularity },
         ]
         return tags
@@ -756,7 +765,7 @@ class Backend(object):
         # Construct downsampler instances
         value_downsamplers = []
         for downsampler in ValueDownsamplers.values:
-            if downsampler.name in metric.downsamplers:
+            if downsampler.name in metric.value_downsamplers:
                 value_downsamplers.append(downsampler())
 
         time_downsamplers = []

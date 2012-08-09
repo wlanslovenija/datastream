@@ -21,7 +21,8 @@ class BasicTest(object):
 
         metric = datastream.Metric(self.datastream.get_tags(metric_id))
         self.assertEqual(metric.id, metric_id)
-        self.assertItemsEqual(metric.downsamplers, self.value_downsamplers)
+        self.assertItemsEqual(metric.value_downsamplers, self.value_downsamplers)
+        self.assertItemsEqual(metric.time_downsamplers, self.time_downsamplers)
         self.assertEqual(metric.highest_granularity, datastream.Granularity.Seconds)
         self.assertItemsEqual(metric.tags, query_tags + tags)
 
