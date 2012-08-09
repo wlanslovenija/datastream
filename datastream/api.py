@@ -142,6 +142,7 @@ class Datastream(object):
         """
 
         self.backend = backend
+        self.backend.set_callback(callback)
 
     def ensure_metric(self, query_tags, tags, downsamplers, highest_granularity):
         """

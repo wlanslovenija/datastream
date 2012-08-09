@@ -6,6 +6,9 @@ import datastream
 from datastream.backends import mongodb
 
 class BasicTest(object):
+    def _test_callback(self, metric_id, granularity, datapoint):
+        self._callback_points.append((metric_id, granularity, datapoint))
+
     def test_basic(self):
         query_tags = [
             {'name': 'foobar'},
@@ -46,6 +49,9 @@ class BasicTest(object):
         data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
         self.assertItemsEqual(data, [])
 
+        # Callback should not have been fired
+        self.assertItemsEqual(self._callback_points, [])
+
         self.datastream.insert(metric_id, 42)
 
         data = self.datastream.get_data(metric_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
@@ -53,6 +59,12 @@ class BasicTest(object):
 
         data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0))
         self.assertItemsEqual(data, [])
+
+        self.assertEqual(len(self._callback_points), 1)
+        cb_metric_id, cb_granularity, cb_datapoint = self._callback_points[0]
+        self.assertEqual(cb_metric_id, metric_id)
+        self.assertEqual(cb_granularity, datastream.Granularity.Seconds)
+        self.assertEqual(cb_datapoint['v'], 42)
 
         # Artificially increase backend time for a minute so that downsample will do something for minute granularity
         self.datastream.backend._time_offset += datetime.timedelta(minutes=1)
@@ -67,6 +79,11 @@ class BasicTest(object):
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]['v'], 42)
 
+        self.assertEqual(len(self._callback_points), 2)
+        cb_metric_id, cb_granularity, cb_datapoint = self._callback_points[1]
+        self.assertEqual(cb_metric_id, metric_id)
+        self.assertEqual(cb_granularity, datastream.Granularity.Minutes)
+
         value_downsamplers_keys = [datastream.VALUE_DOWNSAMPLERS[d] for d in self.value_downsamplers]
         time_downsamplers_keys = [datastream.TIME_DOWNSAMPLERS[d] for d in self.time_downsamplers]
 
@@ -74,6 +91,7 @@ class BasicTest(object):
         self.assertEqual(len(data), 1)
         self.assertItemsEqual(data[0]['v'].keys(), value_downsamplers_keys)
         self.assertItemsEqual(data[0]['t'].keys(), time_downsamplers_keys)
+        self.assertItemsEqual(data[0], cb_datapoint)
 
         data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0))
         self.assertEqual(len(data), 1)
@@ -90,9 +108,10 @@ class MongoDBBasicTest(BasicTest, unittest.TestCase):
     database_name = 'test_database'
 
     def setUp(self):
-        self.datastream = datastream.Datastream(mongodb.Backend(self.database_name))
+        self.datastream = datastream.Datastream(mongodb.Backend(self.database_name), self._test_callback)
         self.value_downsamplers = self.datastream.backend.value_downsamplers
         self.time_downsamplers = self.datastream.backend.time_downsamplers
+        self._callback_points = []
 
     def tearDown(self):
         db = mongoengine.connection.get_db(mongodb.DATABASE_ALIAS)

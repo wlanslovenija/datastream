@@ -329,8 +329,26 @@ class Backend(object):
                 ('m', pymongo.ASCENDING),
             ])
 
+        self.callback = None
+
         # Used only to artificially advance time when testing, don't use!
         self._time_offset = ZERO_TIMEDELTA
+
+    def set_callback(self, callback):
+        """
+        Sets a datapoint notification callback that will be called every time a
+        new datapoint is added to the datastream.
+        """
+
+        self.callback = callback
+
+    def _callback(self, metric_id, granularity, datapoint):
+        """
+        A helper method that invokes the callback when one is registered.
+        """
+
+        if self.callback is not None:
+            self.callback(str(metric_id), granularity, self._format_datapoint(datapoint))
 
     def _process_tags(self, tags):
         """
@@ -521,10 +539,26 @@ class Backend(object):
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
         collection = getattr(db.datapoints, metric.highest_granularity.name)
         if self._time_offset == ZERO_TIMEDELTA:
-            id = collection.insert({ 'm' : metric.id, 'v' : value }, safe = True)
+            datapoint = { 'm' : metric.id, 'v' : value }
         else:
             object_id = self._generate_test_object_id()
-            id = collection.insert({ '_id' : object_id, 'm' : metric.id, 'v' : value }, safe = True)
+            datapoint = { '_id' : object_id, 'm' : metric.id, 'v' : value }
+
+        collection.insert(datapoint, safe = True)
+        self._callback(metric.external_id, metric.highest_granularity, datapoint)
+
+    def _format_datapoint(self, datapoint):
+        """
+        Formats a datapoint so it is suitable for user output.
+
+        :param datapoint: Raw datapoint from MongoDB database
+        :return: A properly formatted datapoint
+        """
+
+        return {
+            't' : datapoint['_id'].generation_time if 't' not in datapoint else datapoint['t'],
+            'v' : datapoint['v']
+        }
 
     def get_data(self, metric_id, granularity, start, end=None, downsamplers=None):
         """
@@ -582,13 +616,7 @@ class Backend(object):
             'm' : metric.id,
         }, downsamplers).sort('_id')
 
-        return [
-            {
-                't' : x['_id'].generation_time if 't' not in x else x['t'],
-                'v' : x['v']
-            }
-            for x in pts
-        ]
+        return [self._format_datapoint(x) for x in pts]
 
     def downsample_metrics(self, query_tags=None):
         """
@@ -739,12 +767,14 @@ class Backend(object):
 
             # Insert downsampled datapoint
             point_id = self._generate_timed_object_id(rounded_timestamp, metric_id)
+            datapoint = { '_id' : point_id, 'm' : metric.id, 'v' : value, 't' : time }
             downsampled_points.update(
                 { '_id' : point_id, 'm' : metric.id },
-                { '_id' : point_id, 'm' : metric.id, 'v' : value, 't' : time },
+                datapoint,
                 upsert = True,
                 safe = True,
             )
+            self._callback(metric.external_id, granularity, datapoint)
 
         downsampled_points = getattr(db.datapoints, granularity.name)
         last_timestamp = None
