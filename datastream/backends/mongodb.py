@@ -356,7 +356,11 @@ class Backend(object):
         """
 
         if self.callback is not None:
-            self.callback(str(metric_id), granularity, self._format_datapoint(datapoint))
+            try:
+                self.callback(str(metric_id), granularity, self._format_datapoint(datapoint))
+            except:
+                # TODO: Should we handle exceptions in some manner? We want a consistent state in the database, though.
+                pass
 
     def _process_tags(self, tags):
         """
