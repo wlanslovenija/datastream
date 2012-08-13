@@ -353,14 +353,12 @@ class Backend(object):
     def _callback(self, metric_id, granularity, datapoint):
         """
         A helper method that invokes the callback when one is registered.
+
+        Should be run after all backend's code so that if raises an exception, backend's state is consistent.
         """
 
         if self.callback is not None:
-            try:
-                self.callback(str(metric_id), granularity, self._format_datapoint(datapoint))
-            except:
-                # TODO: Should we handle exceptions in some manner? We want a consistent state in the database, though.
-                pass
+            self.callback(str(metric_id), granularity, self._format_datapoint(datapoint))
 
     def _process_tags(self, tags):
         """
@@ -558,6 +556,8 @@ class Backend(object):
             datapoint = { '_id' : object_id, 'm' : metric.id, 'v' : value }
 
         datapoint['_id'] = collection.insert(datapoint, safe = True)
+
+        # Call callback last
         self._callback(metric.external_id, metric.highest_granularity, datapoint)
 
     def _format_datapoint(self, datapoint):
@@ -779,6 +779,8 @@ class Backend(object):
         # Pack metric identifier to be used for object id generation
         metric_id = struct.pack('>Q', metric.id)
 
+        datapoints_for_callback = []
+
         def store_downsampled_datapoint():
             value = {}
             time = {}
@@ -803,7 +805,8 @@ class Backend(object):
                 upsert = True,
                 safe = True,
             )
-            self._callback(metric.external_id, granularity, datapoint)
+
+            datapoints_for_callback.append((metric.external_id, granularity, datapoint))
 
         downsampled_points = getattr(db.datapoints, granularity.name)
         last_timestamp = None
@@ -829,3 +832,7 @@ class Backend(object):
 
         # At the end, update the current timestamp in downsample_state
         metric.downsample_state[granularity.name].timestamp = last_timestamp
+
+        # And call callback for all new datapoints
+        for args in datapoints_for_callback:
+            self._callback(*args)
