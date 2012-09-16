@@ -25,6 +25,9 @@ class Granularity(object):
             def __str__(self):
                 return self.__name__.lower()
 
+            def key(self):
+                return self._key
+
         __metaclass__ = _BaseMetaclass
 
         @utils.class_property
@@ -37,15 +40,31 @@ class Granularity(object):
 
     class Seconds(_Base):
         _order = 0
+        _key = 's'
+
+    class Seconds10(_Base):
+        _order = -1
+        _key = 't'
 
     class Minutes(_Base):
-        _order = -1
+        _order = -10
+        _key = 'm'
+
+    class Minutes10(_Base):
+        _order = -11
+        _key = 'n'
 
     class Hours(_Base):
-        _order = -2
+        _order = -20
+        _key = 'h'
+
+    class Hours6(_Base):
+        _order = -21
+        _key = 'i'
 
     class Days(_Base):
-        _order = -3
+        _order = -30
+        _key = 'd'
 
     @utils.class_property
     def values(cls):
@@ -57,13 +76,14 @@ class Granularity(object):
             ], reverse=True))
         return cls._values
 
-# We want initial letters to be unique
-assert len(set(granularity.name.lower()[0] for granularity in Granularity.values)) == len(Granularity.values)
+# We want granularity keys to be unique
+assert len(set(granularity.key() for granularity in Granularity.values)) == len(Granularity.values)
 
 # _order values should be unique
 assert len(set(granularity._order for granularity in Granularity.values)) == len(Granularity.values)
 
-assert Granularity.Seconds > Granularity.Minutes > Granularity.Hours > Granularity.Days
+assert Granularity.Seconds > Granularity.Seconds10 > Granularity.Minutes > \
+       Granularity.Minutes10 > Granularity.Hours > Granularity.Hours6 > Granularity.Days
 
 class Metric(object):
     def __init__(self, all_tags):

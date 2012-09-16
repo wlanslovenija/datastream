@@ -672,13 +672,20 @@ class Backend(object):
         """
 
         round_map = {
-            api.Granularity.Seconds : ['year', 'month', 'day', 'hour', 'minute', 'second'],
-            api.Granularity.Minutes : ['year', 'month', 'day', 'hour', 'minute'],
-            api.Granularity.Hours   : ['year', 'month', 'day', 'hour'],
-            api.Granularity.Days    : ['year', 'month', 'day']
+            api.Granularity.Seconds   : ['year', 'month', 'day', 'hour', 'minute', 'second'],
+            api.Granularity.Seconds10 : ['year', 'month', 'day', 'hour', 'minute', ('second', 10)],
+            api.Granularity.Minutes   : ['year', 'month', 'day', 'hour', 'minute'],
+            api.Granularity.Minutes10 : ['year', 'month', 'day', 'hour', ('minute', 10)],
+            api.Granularity.Hours     : ['year', 'month', 'day', 'hour'],
+            api.Granularity.Hours6    : ['year', 'month', 'day', ('hour', 6)],
+            api.Granularity.Days      : ['year', 'month', 'day']
         }
 
-        return datetime.datetime(**dict(((atom, getattr(timestamp, atom)) for atom in round_map[granularity])))
+        return datetime.datetime(**dict((atom, getattr(timestamp, atom))
+            if type(atom) != tuple else
+                # round to the multiple of atom[1]
+                (atom[0], getattr(timestamp, atom[0]) / atom[1] * atom[1])
+            for atom in round_map[granularity]))
 
     def _downsample_check(self, metric, datum_timestamp):
         """
