@@ -45,7 +45,7 @@ class Granularity(object):
 
     class Seconds10(_Base):
         _order = -1
-        _key = 't'
+        _key = 's10'
 
     class Minutes(_Base):
         _order = -10
@@ -53,7 +53,7 @@ class Granularity(object):
 
     class Minutes10(_Base):
         _order = -11
-        _key = 'n'
+        _key = 'm10'
 
     class Hours(_Base):
         _order = -20
@@ -61,7 +61,7 @@ class Granularity(object):
 
     class Hours6(_Base):
         _order = -21
-        _key = 'i'
+        _key = 'h6'
 
     class Days(_Base):
         _order = -30
