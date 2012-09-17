@@ -25,14 +25,15 @@ class Granularity(object):
             def __str__(self):
                 return self.__name__.lower()
 
-            def key(self):
-                return self._key
-
         __metaclass__ = _BaseMetaclass
 
         @utils.class_property
         def name(cls):
             return cls.__name__.lower()
+
+        @utils.class_property
+        def key(cls):
+            return cls._key
 
         @classmethod
         def __str__(cls):
@@ -77,7 +78,7 @@ class Granularity(object):
         return cls._values
 
 # We want granularity keys to be unique
-assert len(set(granularity.key() for granularity in Granularity.values)) == len(Granularity.values)
+assert len(set(granularity.key for granularity in Granularity.values)) == len(Granularity.values)
 
 # _order values should be unique
 assert len(set(granularity._order for granularity in Granularity.values)) == len(Granularity.values)
