@@ -425,9 +425,8 @@ class Backend(object):
             if highest_granularity != api.Granularity.values[-1]:
                 for granularity in api.Granularity.values[api.Granularity.values.index(highest_granularity) + 1:]:
                     state = DownsampleState()
-                    state.timestamp = self._round_downsampled_timestamp(
+                    state.timestamp = granularity.round_timestamp(
                         datetime.datetime.utcnow() + self._time_offset,
-                        granularity,
                     )
                     metric.downsample_state[granularity.name] = state
 
@@ -661,32 +660,6 @@ class Backend(object):
         for metric in qs:
             self._downsample_check(metric, now)
 
-    def _round_downsampled_timestamp(self, timestamp, granularity):
-        """
-        Rounds the timestamp to specific time boundary defined by the
-        granularity.
-
-        :param timestamp: Raw timestamp
-        :param granularity: Wanted granularity
-        :return: Rounded timestamp
-        """
-
-        round_map = {
-            api.Granularity.Seconds   : ['year', 'month', 'day', 'hour', 'minute', 'second'],
-            api.Granularity.Seconds10 : ['year', 'month', 'day', 'hour', 'minute', ('second', 10)],
-            api.Granularity.Minutes   : ['year', 'month', 'day', 'hour', 'minute'],
-            api.Granularity.Minutes10 : ['year', 'month', 'day', 'hour', ('minute', 10)],
-            api.Granularity.Hours     : ['year', 'month', 'day', 'hour'],
-            api.Granularity.Hours6    : ['year', 'month', 'day', ('hour', 6)],
-            api.Granularity.Days      : ['year', 'month', 'day']
-        }
-
-        return datetime.datetime(**dict((atom, getattr(timestamp, atom))
-            if type(atom) != tuple else
-                # round to the multiple of atom[1]
-                (atom[0], getattr(timestamp, atom[0]) / atom[1] * atom[1])
-            for atom in round_map[granularity]))
-
     def _downsample_check(self, metric, datum_timestamp):
         """
         Checks if we need to perform any metric downsampling. In case it is needed,
@@ -697,7 +670,7 @@ class Backend(object):
         """
         for granularity in api.Granularity.values[api.Granularity.values.index(metric.highest_granularity) + 1:]:
             state = metric.downsample_state.get(granularity.name, None)
-            rounded_timestamp = self._round_downsampled_timestamp(datum_timestamp, granularity)
+            rounded_timestamp = granularity.round_timestamp(datum_timestamp)
             if state is None or rounded_timestamp > state.timestamp:
                 self._downsample(metric, granularity, rounded_timestamp)
 
@@ -819,7 +792,7 @@ class Backend(object):
         last_timestamp = None
         for datapoint in datapoints.sort('_id'):
             ts = datapoint['_id'].generation_time
-            rounded_timestamp = self._round_downsampled_timestamp(ts, granularity)
+            rounded_timestamp = granularity.round_timestamp(ts)
             if last_timestamp is None:
                 for x in value_downsamplers + time_downsamplers:
                     x.initialize()
