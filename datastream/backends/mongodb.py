@@ -628,7 +628,7 @@ class Backend(object):
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
         collection = getattr(db.datapoints, granularity.name)
         time_query = {
-            '$gte' : objectid.ObjectId.from_datetime(start),
+            '$gte' : objectid.ObjectId.from_datetime(granularity.round_timestamp(start)),
         }
 
         if end is not None:
