@@ -31,7 +31,7 @@ class Granularity(object):
                     if type(atom) != tuple:
                         time_values[atom] = getattr(timestamp, atom)
                     else:
-                        time_values[atom[0]] = getattr(timestamp, atom[0]) / atom[1] * atom[1]
+                        time_values[atom[0]] = getattr(timestamp, atom[0]) // atom[1] * atom[1]
 
                 return datetime.datetime(**time_values)
 
