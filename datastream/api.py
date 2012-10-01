@@ -39,7 +39,7 @@ class Granularity(object):
 
         @utils.class_property
         def name(cls):
-            return cls.__name__.lower()
+            return cls._name
 
         @utils.class_property
         def key(cls):
@@ -53,36 +53,43 @@ class Granularity(object):
         _order = 0
         _key = 's'
         _round_rule = ('year', 'month', 'day', 'hour', 'minute', 'second')
+        _name = 'seconds'
 
     class Seconds10(_Base):
         _order = -1
         _key = '10s'
         _round_rule = ('year', 'month', 'day', 'hour', 'minute', ('second', 10))
+        _name = '10seconds'
 
     class Minutes(_Base):
         _order = -10
         _key = 'm'
         _round_rule = ('year', 'month', 'day', 'hour', 'minute')
+        _name = 'minutes'
 
     class Minutes10(_Base):
         _order = -11
         _key = '10m'
         _round_rule = ('year', 'month', 'day', 'hour', ('minute', 10))
+        _name = '10minutes'
 
     class Hours(_Base):
         _order = -20
         _key = 'h'
         _round_rule = ('year', 'month', 'day', 'hour')
+        _name = 'hours'
 
     class Hours6(_Base):
         _order = -21
         _key = '6h'
         _round_rule = ('year', 'month', 'day', ('hour', 6))
+        _name = '6hours'
 
     class Days(_Base):
         _order = -30
         _key = 'd'
         _round_rule = ('year', 'month', 'day')
+        _name = 'days'
 
     @utils.class_property
     def values(cls):
@@ -272,7 +279,7 @@ class Datastream(object):
 
         return self.backend.find_metrics(query_tags)
 
-    def insert(self, metric_id, value):
+    def insert(self, metric_id, value, timestamp=None):
         """
         Inserts a data point into the data stream.
 
@@ -280,7 +287,7 @@ class Datastream(object):
         :param value: Metric value
         """
 
-        return self.backend.insert(metric_id, value)
+        return self.backend.insert(metric_id, value, timestamp)
 
     def get_data(self, metric_id, granularity, start, end=None, value_downsamplers=None, time_downsamplers=None):
         """
@@ -309,6 +316,12 @@ class Datastream(object):
                 raise exceptions.UnsupportedDownsampler("Unsupported time downsampler(s): %s" % unsupported_downsamplers)
 
         return self.backend.get_data(metric_id, granularity, start, end, value_downsamplers, time_downsamplers)
+
+    def remove_data(self):
+        """
+        Removes datastream data from the database.
+        """
+        self.backend.remove_data()
 
     def downsample_metrics(self, query_tags=None):
         """

@@ -425,9 +425,7 @@ class Backend(object):
             if highest_granularity != api.Granularity.values[-1]:
                 for granularity in api.Granularity.values[api.Granularity.values.index(highest_granularity) + 1:]:
                     state = DownsampleState()
-                    state.timestamp = granularity.round_timestamp(
-                        datetime.datetime.utcnow() + self._time_offset,
-                    )
+                    state.timestamp = None #granularity.round_timestamp(datetime.datetime.utcnow() + self._time_offset)
                     metric.downsample_state[granularity.name] = state
 
             metric.save()
@@ -532,7 +530,7 @@ class Backend(object):
         query_set = self._get_metric_queryset(query_tags)
         return [self._get_metric_tags(m) for m in query_set]
 
-    def insert(self, metric_id, value):
+    def insert(self, metric_id, value, timestamp=None):
         """
         Inserts a data point into the data stream.
 
@@ -548,7 +546,10 @@ class Backend(object):
         # Insert the datapoint into appropriate granularity
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
         collection = getattr(db.datapoints, metric.highest_granularity.name)
-        if self._time_offset == ZERO_TIMEDELTA:
+        if timestamp is not None:
+            object_id = self._generate_test_object_id(timestamp)
+            datapoint = { '_id' : object_id, 'm' : metric.id, 'v' : value }
+        elif self._time_offset == ZERO_TIMEDELTA:
             datapoint = { 'm' : metric.id, 'v' : value }
         else:
             object_id = self._generate_test_object_id()
@@ -653,14 +654,14 @@ class Backend(object):
 
     def remove_data(self):
         """
-        Removes all data from the database.
+        Removes datastream data from the database.
         """
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
         for granularity in api.Granularity.values:
             collection = getattr(db.datapoints, granularity.name)
-            collection.objects.all().remove()
+            collection.remove()
 
-        Metric.objects.all().remove()
+        db.metrics.remove()
 
     def downsample_metrics(self, query_tags=None):
         """
@@ -687,10 +688,10 @@ class Backend(object):
         for granularity in api.Granularity.values[api.Granularity.values.index(metric.highest_granularity) + 1:]:
             state = metric.downsample_state.get(granularity.name, None)
             rounded_timestamp = granularity.round_timestamp(datum_timestamp)
-            if state is None or rounded_timestamp > state.timestamp:
+            if state.timestamp is None or rounded_timestamp > state.timestamp:
                 self._downsample(metric, granularity, rounded_timestamp)
 
-    def _generate_test_object_id(self):
+    def _generate_test_object_id(self, timestamp=None):
         """
         Generates a new ObjectId with time offset. Used only when testing.
         """
@@ -698,7 +699,10 @@ class Backend(object):
         oid = objectid.EMPTY
 
         # 4 bytes current time
-        oid += struct.pack('>i', int(time.time() + self._time_offset.total_seconds()))
+        if timestamp is not None:
+            oid += struct.pack('>i', int(calendar.timegm(timestamp.timetuple())))
+        else:
+            oid += struct.pack('>i', int(time.time() + self._time_offset.total_seconds()))
 
         # 3 bytes machine
         oid += objectid.ObjectId._machine_bytes
@@ -793,7 +797,7 @@ class Backend(object):
                 x.initialize()
 
             # Insert downsampled datapoint
-            point_id = self._generate_timed_object_id(rounded_timestamp, metric_id)
+            point_id = self._generate_timed_object_id(last_timestamp, metric_id)
             datapoint = { '_id' : point_id, 'm' : metric.id, 'v' : value, 't' : time }
             downsampled_points.update(
                 { '_id' : point_id, 'm' : metric.id },
