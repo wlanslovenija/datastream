@@ -627,6 +627,9 @@ class Backend(object):
         # Get the datapoints
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
         collection = getattr(db.datapoints, granularity.name)
+        # Round the start time to include the first granular value of the
+        # corresponding interval (ie. values from 15:00 to 16:00 are stored at
+        # the time 15:00 for hours granularity)
         time_query = {
             '$gte' : objectid.ObjectId.from_datetime(granularity.round_timestamp(start)),
         }
@@ -635,6 +638,8 @@ class Backend(object):
             # We add one second and use strict less-than to cover all
             # possible ObjectId values in a given "end" timestamp
             end += datetime.timedelta(seconds = 1)
+            # No need to round the end time as the last granularity is
+            # automatically included
             time_query.update({
                 '$lt' : objectid.ObjectId.from_datetime(end),
             })
@@ -645,6 +650,17 @@ class Backend(object):
         }, downsamplers).sort('_id')
 
         return [self._format_datapoint(x) for x in pts]
+
+    def remove_data(self):
+        """
+        Removes all data from the database.
+        """
+        db = mongoengine.connection.get_db(DATABASE_ALIAS)
+        for granularity in api.Granularity.values:
+            collection = getattr(db.datapoints, granularity.name)
+            collection.objects.all().remove()
+
+        Metric.objects.all().remove()
 
     def downsample_metrics(self, query_tags=None):
         """
