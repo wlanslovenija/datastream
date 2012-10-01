@@ -26,11 +26,14 @@ class Granularity(object):
                 return self.__name__.lower()
 
             def round_timestamp(self, timestamp):
-                return datetime.datetime(**dict((atom, getattr(timestamp, atom))
-                    if type(atom) != tuple else
-                    # round to the multiple of atom[1]
-                    (atom[0], getattr(timestamp, atom[0]) / atom[1] * atom[1])
-                        for atom in self._round_rule))
+                time_values = {}
+                for atom in self._round_rule:
+                    if type(atom) != tuple:
+                        time_values[atom] = getattr(timestamp, atom)
+                    else:
+                        time_values[atom[0]] = getattr(timestamp, atom[0]) / atom[1] * atom[1]
+
+                return datetime.datetime(**time_values)
 
         __metaclass__ = _BaseMetaclass
 
@@ -49,37 +52,37 @@ class Granularity(object):
     class Seconds(_Base):
         _order = 0
         _key = 's'
-        _round_rule = ['year', 'month', 'day', 'hour', 'minute', 'second']
+        _round_rule = ('year', 'month', 'day', 'hour', 'minute', 'second')
 
     class Seconds10(_Base):
         _order = -1
-        _key = 's10'
-        _round_rule = ['year', 'month', 'day', 'hour', 'minute', ('second', 10)]
+        _key = '10s'
+        _round_rule = ('year', 'month', 'day', 'hour', 'minute', ('second', 10))
 
     class Minutes(_Base):
         _order = -10
         _key = 'm'
-        _round_rule = ['year', 'month', 'day', 'hour', 'minute']
+        _round_rule = ('year', 'month', 'day', 'hour', 'minute')
 
     class Minutes10(_Base):
         _order = -11
-        _key = 'm10'
-        _round_rule = ['year', 'month', 'day', 'hour', ('minute', 10)]
+        _key = '10m'
+        _round_rule = ('year', 'month', 'day', 'hour', ('minute', 10))
 
     class Hours(_Base):
         _order = -20
         _key = 'h'
-        _round_rule = ['year', 'month', 'day', 'hour']
+        _round_rule = ('year', 'month', 'day', 'hour')
 
     class Hours6(_Base):
         _order = -21
-        _key = 'h6'
-        _round_rule = ['year', 'month', 'day', ('hour', 6)]
+        _key = '6h'
+        _round_rule = ('year', 'month', 'day', ('hour', 6))
 
     class Days(_Base):
         _order = -30
         _key = 'd'
-        _round_rule = ['year', 'month', 'day']
+        _round_rule = ('year', 'month', 'day')
 
     @utils.class_property
     def values(cls):
