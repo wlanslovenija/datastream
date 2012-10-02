@@ -659,9 +659,24 @@ class Backend(object):
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
         for granularity in api.Granularity.values:
             collection = getattr(db.datapoints, granularity.name)
-            collection.remove()
+            collection.drop()
 
-        db.metrics.remove()
+        db.metrics.drop()
+
+
+    def last_timestamp(self):
+        """
+        Returns timestamp of the last record in the database.
+        """
+        db = mongoengine.connection.get_db(DATABASE_ALIAS)
+
+        # Determine the interval that needs downsampling
+        datapoints = getattr(db.datapoints, api.Granularity.values[0].name)
+        npoints = datapoints.find().count()
+        if npoints > 0:
+            return datapoints.find().skip(npoints - 1).next()['_id'].generation_time
+        else:
+            return datetime.datetime.min
 
     def downsample_metrics(self, query_tags=None):
         """

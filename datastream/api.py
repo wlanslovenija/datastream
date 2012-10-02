@@ -323,6 +323,12 @@ class Datastream(object):
         """
         self.backend.remove_data()
 
+    def last_timestamp(self):
+        """
+        Returns timestamp of the last record in the database.
+        """
+        return self.backend.last_timestamp()
+
     def downsample_metrics(self, query_tags=None):
         """
         Requests the backend to downsample all metrics matching the specified
