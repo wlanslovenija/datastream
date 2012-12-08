@@ -843,7 +843,8 @@ class Backend(object):
                 x.update(int(calendar.timegm(ts.timetuple())))
 
         # Don't forget to store the last downsampled datapoint
-        store_downsampled_datapoint()
+        if last_timestamp is not None:
+            store_downsampled_datapoint()
 
         # At the end, update the current timestamp in downsample_state
         metric.downsample_state[granularity.name].timestamp = last_timestamp

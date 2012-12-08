@@ -323,7 +323,7 @@ class Datastream(object):
         """
         self.backend.remove_data()
 
-    def last_timestamp(self):
+    def _last_timestamp(self):
         """
         Returns timestamp of the last record in the database.
         """
