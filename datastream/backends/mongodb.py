@@ -715,7 +715,7 @@ class Backend(object):
 
         # 4 bytes current time
         if timestamp is not None:
-            oid += struct.pack('>i', int(calendar.timegm(timestamp.timetuple())))
+            oid += struct.pack('>i', int(time.mktime(timestamp.timetuple())))
         else:
             oid += struct.pack('>i', int(time.time() + self._time_offset.total_seconds()))
 

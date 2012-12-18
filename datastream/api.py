@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 
-import datetime, inspect
+import calendar, datetime, inspect
 
 from . import exceptions, utils
 
@@ -26,6 +26,9 @@ class Granularity(object):
                 return self.__name__.lower()
 
             def round_timestamp(self, timestamp):
+                if timestamp.utcoffset() is not None:
+                    timestamp = timestamp - timestamp.utcoffset()
+
                 time_values = {}
                 for atom in self._round_rule:
                     if type(atom) != tuple:
