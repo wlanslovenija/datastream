@@ -1,8 +1,8 @@
 import datetime, time, unittest
 
 import mongoengine
-
 import datastream
+
 from datastream.backends import mongodb
 
 class BasicTest(object):
@@ -53,7 +53,8 @@ class BasicTest(object):
         # Callback should not have been fired
         self.assertItemsEqual(self._callback_points, [])
 
-        self.datastream.insert(metric_id, 42)
+        self.datastream.append(metric_id, 42)
+        self.assertRaises(datastream.exceptions.InvalidValue, lambda: self.datastream.append(metric_id, 42, datetime.datetime.min))
 
         data = self.datastream.get_data(metric_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
         self.assertEqual(len(data), 1)
@@ -107,6 +108,24 @@ class BasicTest(object):
         self.assertEqual(len(data), 1)
         self.assertItemsEqual(data[0]['v'].keys(), (datastream.VALUE_DOWNSAMPLERS['count'],))
         self.assertEqual(data[0]['v'][datastream.VALUE_DOWNSAMPLERS['count']], 1)
+
+    def test_data(self):
+        query_tags = [
+            {'name': 'foodata'},
+        ]
+        tags = []
+
+        metric_id = self.datastream.ensure_metric(query_tags, tags, self.value_downsamplers, datastream.Granularity.Seconds)
+        metric = datastream.Metric(self.datastream.get_tags(metric_id))
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0)
+        for i in range(1200):
+            self.datastream.append(metric_id, i, ts)
+            ts += datetime.timedelta(0, 1)
+
+
+
+
 
 class MongoDBBasicTest(BasicTest, unittest.TestCase):
     database_name = 'test_database'

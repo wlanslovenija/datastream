@@ -530,9 +530,9 @@ class Backend(object):
         query_set = self._get_metric_queryset(query_tags)
         return [self._get_metric_tags(m) for m in query_set]
 
-    def insert(self, metric_id, value, timestamp=None):
+    def append(self, metric_id, value, timestamp=None):
         """
-        Inserts a data point into the data stream.
+        Appends a data point into the data stream.
 
         :param metric_id: Metric identifier
         :param value: Metric value
@@ -543,10 +543,19 @@ class Backend(object):
         except Metric.DoesNotExist:
             raise exceptions.MetricNotFound
 
-        # Insert the datapoint into appropriate granularity
+        # Append the datapoint into appropriate granularity
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
         collection = getattr(db.datapoints, metric.highest_granularity.name)
-        if timestamp is not None:
+        if timestamp:
+            # set time-zone to UTF if not set
+            last_timestamp = self.last_timestamp(metric.id)
+            if timestamp.tzinfo is None:
+                # values are saved in UTC time in the data base
+                timestamp = timestamp.replace(tzinfo=last_timestamp.tzinfo)
+
+            if timestamp <= last_timestamp:
+                raise exceptions.InvalidValue("Insert timestamp should be higher than the last inserted.")
+
             object_id = self._generate_test_object_id(timestamp)
             datapoint = { '_id' : object_id, 'm' : metric.id, 'v' : value }
         elif self._time_offset == ZERO_TIMEDELTA:
@@ -664,17 +673,19 @@ class Backend(object):
         db.metrics.drop()
 
 
-    def last_timestamp(self):
+    def last_timestamp(self, metric_id=None):
         """
         Returns timestamp of the last record in the database.
         """
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
 
         # Determine the interval that needs downsampling
-        datapoints = getattr(db.datapoints, api.Granularity.values[0].name)
-        npoints = datapoints.find().count()
+        collection = getattr(db.datapoints, api.Granularity.values[0].name)
+        query = { 'm' : metric_id } if metric_id else {}
+        npoints = collection.find(query).count()
+
         if npoints > 0:
-            return datapoints.find().skip(npoints - 1).next()['_id'].generation_time
+            return collection.find(query).sort('_id').skip(npoints - 1).next()['_id'].generation_time
         else:
             return datetime.datetime.min
 

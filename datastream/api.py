@@ -202,7 +202,7 @@ class Datastream(object):
         Class constructor.
 
         :param backend: Backend instance
-        :param callback: Callback to call when new datapoint is inserted or downsampled
+        :param callback: Callback to call when new datapoint is appended or downsampled
         """
 
         self.backend = backend
@@ -282,15 +282,16 @@ class Datastream(object):
 
         return self.backend.find_metrics(query_tags)
 
-    def insert(self, metric_id, value, timestamp=None):
+    def append(self, metric_id, value, timestamp=None):
         """
-        Inserts a data point into the data stream.
+        Appends a data point into the data stream.
 
         :param metric_id: Metric identifier
         :param value: Metric value
+        :param timestamp: The time of the datapoint: should be larger than the last point.
         """
 
-        return self.backend.insert(metric_id, value, timestamp)
+        return self.backend.append(metric_id, value, timestamp)
 
     def get_data(self, metric_id, granularity, start, end=None, value_downsamplers=None, time_downsamplers=None):
         """
