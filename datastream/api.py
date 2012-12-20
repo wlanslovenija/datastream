@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 
-import inspect
+import calendar, datetime, inspect
 
 from . import exceptions, utils
 
@@ -25,11 +25,28 @@ class Granularity(object):
             def __str__(self):
                 return self.__name__.lower()
 
+            def round_timestamp(self, timestamp):
+                if timestamp.utcoffset() is not None:
+                    timestamp = timestamp - timestamp.utcoffset()
+
+                time_values = {}
+                for atom in self._round_rule:
+                    if type(atom) != tuple:
+                        time_values[atom] = getattr(timestamp, atom)
+                    else:
+                        time_values[atom[0]] = getattr(timestamp, atom[0]) // atom[1] * atom[1]
+
+                return datetime.datetime(**time_values)
+
         __metaclass__ = _BaseMetaclass
 
         @utils.class_property
         def name(cls):
-            return cls.__name__.lower()
+            return cls._name
+
+        @utils.class_property
+        def key(cls):
+            return cls._key
 
         @classmethod
         def __str__(cls):
@@ -37,15 +54,45 @@ class Granularity(object):
 
     class Seconds(_Base):
         _order = 0
+        _key = 's'
+        _round_rule = ('year', 'month', 'day', 'hour', 'minute', 'second')
+        _name = 'seconds'
+
+    class Seconds10(_Base):
+        _order = -1
+        _key = '10s'
+        _round_rule = ('year', 'month', 'day', 'hour', 'minute', ('second', 10))
+        _name = '10seconds'
 
     class Minutes(_Base):
-        _order = -1
+        _order = -10
+        _key = 'm'
+        _round_rule = ('year', 'month', 'day', 'hour', 'minute')
+        _name = 'minutes'
+
+    class Minutes10(_Base):
+        _order = -11
+        _key = '10m'
+        _round_rule = ('year', 'month', 'day', 'hour', ('minute', 10))
+        _name = '10minutes'
 
     class Hours(_Base):
-        _order = -2
+        _order = -20
+        _key = 'h'
+        _round_rule = ('year', 'month', 'day', 'hour')
+        _name = 'hours'
+
+    class Hours6(_Base):
+        _order = -21
+        _key = '6h'
+        _round_rule = ('year', 'month', 'day', ('hour', 6))
+        _name = '6hours'
 
     class Days(_Base):
-        _order = -3
+        _order = -30
+        _key = 'd'
+        _round_rule = ('year', 'month', 'day')
+        _name = 'days'
 
     @utils.class_property
     def values(cls):
@@ -57,13 +104,14 @@ class Granularity(object):
             ], reverse=True))
         return cls._values
 
-# We want initial letters to be unique
-assert len(set(granularity.name.lower()[0] for granularity in Granularity.values)) == len(Granularity.values)
+# We want granularity keys to be unique
+assert len(set(granularity.key for granularity in Granularity.values)) == len(Granularity.values)
 
 # _order values should be unique
 assert len(set(granularity._order for granularity in Granularity.values)) == len(Granularity.values)
 
-assert Granularity.Seconds > Granularity.Minutes > Granularity.Hours > Granularity.Days
+assert Granularity.Seconds > Granularity.Seconds10 > Granularity.Minutes > \
+       Granularity.Minutes10 > Granularity.Hours > Granularity.Hours6 > Granularity.Days
 
 class Metric(object):
     def __init__(self, all_tags):
@@ -234,7 +282,7 @@ class Datastream(object):
 
         return self.backend.find_metrics(query_tags)
 
-    def insert(self, metric_id, value):
+    def insert(self, metric_id, value, timestamp=None):
         """
         Inserts a data point into the data stream.
 
@@ -242,7 +290,7 @@ class Datastream(object):
         :param value: Metric value
         """
 
-        return self.backend.insert(metric_id, value)
+        return self.backend.insert(metric_id, value, timestamp)
 
     def get_data(self, metric_id, granularity, start, end=None, value_downsamplers=None, time_downsamplers=None):
         """
@@ -271,6 +319,18 @@ class Datastream(object):
                 raise exceptions.UnsupportedDownsampler("Unsupported time downsampler(s): %s" % unsupported_downsamplers)
 
         return self.backend.get_data(metric_id, granularity, start, end, value_downsamplers, time_downsamplers)
+
+    def remove_data(self):
+        """
+        Removes datastream data from the database.
+        """
+        self.backend.remove_data()
+
+    def _last_timestamp(self):
+        """
+        Returns timestamp of the last record in the database.
+        """
+        return self.backend.last_timestamp()
 
     def downsample_metrics(self, query_tags=None):
         """

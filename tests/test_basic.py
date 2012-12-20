@@ -80,8 +80,11 @@ class BasicTest(object):
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]['v'], 42)
 
-        self.assertEqual(len(self._callback_points), 2)
+        self.assertEqual(len(self._callback_points), 3)
         cb_metric_id, cb_granularity, cb_datapoint = self._callback_points[1]
+        self.assertEqual(cb_metric_id, metric_id)
+        self.assertEqual(cb_granularity, datastream.Granularity.Seconds10)
+        cb_metric_id, cb_granularity, cb_datapoint = self._callback_points[2]
         self.assertEqual(cb_metric_id, metric_id)
         self.assertEqual(cb_granularity, datastream.Granularity.Minutes)
 
