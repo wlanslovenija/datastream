@@ -63,7 +63,7 @@ class Granularity(object):
 
     class Seconds10(_Base):
         _order = -1
-        _key = '10s'
+        _key = 'S'
         _round_rule = ('year', 'month', 'day', 'hour', 'minute', ('second', 10))
         _name = '10seconds'
 
@@ -75,7 +75,7 @@ class Granularity(object):
 
     class Minutes10(_Base):
         _order = -11
-        _key = '10m'
+        _key = 'M'
         _round_rule = ('year', 'month', 'day', 'hour', ('minute', 10))
         _name = '10minutes'
 
@@ -87,7 +87,7 @@ class Granularity(object):
 
     class Hours6(_Base):
         _order = -21
-        _key = '6h'
+        _key = 'H'
         _round_rule = ('year', 'month', 'day', ('hour', 6))
         _name = '6hours'
 
