@@ -1,6 +1,8 @@
 from __future__ import absolute_import
 
-import calendar, datetime, inspect
+import datetime, inspect
+
+import pytz
 
 from . import exceptions, utils
 
@@ -23,20 +25,7 @@ class Granularity(object):
                 return self._order == other._order
 
             def __str__(self):
-                return self.__name__.lower()
-
-            def round_timestamp(self, timestamp):
-                if timestamp.utcoffset() is not None:
-                    timestamp = timestamp - timestamp.utcoffset()
-
-                time_values = {}
-                for atom in self._round_rule:
-                    if type(atom) != tuple:
-                        time_values[atom] = getattr(timestamp, atom)
-                    else:
-                        time_values[atom[0]] = getattr(timestamp, atom[0]) // atom[1] * atom[1]
-
-                return datetime.datetime(**time_values)
+                return self._name
 
         __metaclass__ = _BaseMetaclass
 
@@ -50,7 +39,21 @@ class Granularity(object):
 
         @classmethod
         def __str__(cls):
-            return cls.__name__.lower()
+            return cls._name
+
+        @classmethod
+        def round_timestamp(cls, timestamp):
+            if timestamp.utcoffset() is not None:
+                timestamp = timestamp - timestamp.utcoffset()
+
+            time_values = {}
+            for atom in cls._round_rule:
+                if isinstance(atom, basestring):
+                    time_values[atom] = getattr(timestamp, atom)
+                else:
+                    time_values[atom[0]] = getattr(timestamp, atom[0]) // atom[1] * atom[1]
+
+            return datetime.datetime(tzinfo=pytz.utc, **time_values)
 
     class Seconds(_Base):
         _order = 0
