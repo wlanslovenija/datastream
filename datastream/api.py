@@ -293,18 +293,27 @@ class Datastream(object):
 
         return self.backend.append(metric_id, value, timestamp)
 
-    def get_data(self, metric_id, granularity, start, end=None, value_downsamplers=None, time_downsamplers=None):
+    def get_data(self, metric_id, granularity, s=None, e=None, sx=None, ex=None, value_downsamplers=None, time_downsamplers=None):
         """
         Retrieves data from a certain time range and of a certain granularity.
 
         :param metric_id: Metric identifier
         :param granularity: Wanted granularity
-        :param start: Time range start
-        :param end: Time range end (optional)
+        :param s: Time range start (including the first point)
+        :param e: Time range end (optional, including the last point)
+        :param sx: Time range start (excluding the first point)
+        :param ex: Time range end (optional, excluding the last point)
         :param value_downsamplers: The list of downsamplers to limit datapoint values to (optional)
         :param time_downsamplers: The list of downsamplers to limit timestamp values to (optional)
         :return: A list of datapoints
         """
+
+        if (s is None) == (sx is None):
+            raise AttributeError("One and only one start time must be defined.")
+
+        if e is not None and ex is not None:
+            raise AttributeError("Only one end time can be defined.")
+
 
         if granularity not in Granularity.values:
             raise exceptions.UnsupportedGranularity("'granularity' is not a valid value: '%s'" % granularity)
@@ -319,7 +328,7 @@ class Datastream(object):
             if len(unsupported_downsamplers) > 0:
                 raise exceptions.UnsupportedDownsampler("Unsupported time downsampler(s): %s" % unsupported_downsamplers)
 
-        return self.backend.get_data(metric_id, granularity, start, end, value_downsamplers, time_downsamplers)
+        return self.backend.get_data(metric_id, granularity, s, e, sx, ex, value_downsamplers, time_downsamplers)
 
     def remove_data(self):
         """

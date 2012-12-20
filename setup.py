@@ -31,6 +31,7 @@ if __name__ == '__main__':
             # 0.6.19 has broken UUID field, we are waiting for new version
             'mongoengine==0.6.18',
             'pymongo>=2.2.1',
+            'pytz>=2012h',
         ],
         test_suite = 'tests',
     )

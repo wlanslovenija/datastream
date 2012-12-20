@@ -1,4 +1,5 @@
 import calendar, datetime, inspect, os, struct, time, uuid
+import pytz
 
 import pymongo
 from bson import objectid
@@ -332,9 +333,14 @@ class Backend(object):
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
         for granularity in api.Granularity.values:
             collection = getattr(db.datapoints, granularity.name)
+            # compound inxed
             collection.ensure_index([
-                ('_id', pymongo.ASCENDING),
                 ('m', pymongo.ASCENDING),
+                ('_id', pymongo.DESCENDING),
+            ])
+            # single key index
+            collection.ensure_index([
+                ('_id', pymongo.DESCENDING),
             ])
 
         self.callback = None
@@ -537,7 +543,6 @@ class Backend(object):
         :param metric_id: Metric identifier
         :param value: Metric value
         """
-
         try:
             metric = Metric.objects.get(external_id = metric_id)
         except Metric.DoesNotExist:
@@ -547,25 +552,23 @@ class Backend(object):
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
         collection = getattr(db.datapoints, metric.highest_granularity.name)
         if timestamp:
-            # set time-zone to UTF if not set
-            last_timestamp = self.last_timestamp(metric.id)
             if timestamp.tzinfo is None:
-                # values are saved in UTC time in the data base
-                timestamp = timestamp.replace(tzinfo=last_timestamp.tzinfo)
+                timestamp = timestamp.replace(tzinfo=pytz.utc)
 
-            if timestamp <= last_timestamp:
+            if timestamp <= self.last_timestamp(metric):
                 raise exceptions.InvalidValue("Insert timestamp should be higher than the last inserted.")
 
-            object_id = self._generate_test_object_id(timestamp)
+            object_id = self._generate_timed_object_id(timestamp)
             datapoint = { '_id' : object_id, 'm' : metric.id, 'v' : value }
+
         elif self._time_offset == ZERO_TIMEDELTA:
             datapoint = { 'm' : metric.id, 'v' : value }
+
         else:
-            object_id = self._generate_test_object_id()
+            object_id = self._generate_timed_object_id()
             datapoint = { '_id' : object_id, 'm' : metric.id, 'v' : value }
 
         datapoint['_id'] = collection.insert(datapoint, safe = True)
-
         # Call callback last
         self._callback(metric.external_id, metric.highest_granularity, datapoint)
 
@@ -582,18 +585,56 @@ class Backend(object):
             'v' : datapoint['v']
         }
 
-    def get_data(self, metric_id, granularity, start, end=None, value_downsamplers=None, time_downsamplers=None):
+    def get_data(self, metric_id, granularity, s=None, e=None, sx=None, ex=None, value_downsamplers=None, time_downsamplers=None):
         """
         Retrieves data from a certain time range and of a certain granularity.
 
         :param metric_id: Metric identifier
         :param granularity: Wanted granularity
-        :param start: Time range start
-        :param end: Time range end (optional)
+        :param s: Time range start (including the first point)
+        :param e: Time range end (optional, including the last point)
+        :param sx: Time range start (excluding the first point)
+        :param ex: Time range end (optional, excluding the last point)
         :param value_downsamplers: The list of downsamplers to limit datapoint values to (optional)
         :param time_downsamplers: The list of downsamplers to limit timestamp values to (optional)
         :return: A list of datapoints
         """
+
+        if (s is None) == (sx is None):
+            raise AttributeError("One and only one start time attribute must be defined.")
+
+        if e is not None and ex is not None:
+            raise AttributeError("Only one end time attribute can be defined.")
+
+        s, sx = (sx, 1) if sx else (s, 0)
+
+        if s.tzinfo is None:
+            s = s.replace(tzinfo=pytz.utc)
+
+        s = granularity.round_timestamp(s) + datetime.timedelta(seconds=sx)
+        s = max(s, datetime.datetime.utcfromtimestamp(0))
+        s = min(s, datetime.datetime.utcfromtimestamp(2147483647))
+        time_query = {
+            '$gte' : objectid.ObjectId.from_datetime(s),
+        }
+
+        if e is not None or ex is not None:
+            e, ex = (ex, 0) if ex else (e, 1)
+
+            if e.tzinfo is None:
+                # If the last point is to be included, we add one second and
+                # use strict less-than to cover all possible ObjectId values
+                # in a given "end" timestamp
+                e = e.replace(tzinfo=pytz.utc)
+
+            # No need to round the end time as the last granularity is
+            # automatically included
+            e = granularity.round_timestamp(e) + datetime.timedelta(seconds=ex)
+            e = max(e, datetime.datetime.utcfromtimestamp(0))
+            e = min(e, datetime.datetime.utcfromtimestamp(2147483647))
+            time_query.update({
+                '$lt' : objectid.ObjectId.from_datetime(e),
+            })
 
         try:
             metric = Metric.objects.get(external_id = metric_id)
@@ -637,22 +678,6 @@ class Backend(object):
         # Get the datapoints
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
         collection = getattr(db.datapoints, granularity.name)
-        # Round the start time to include the first granular value of the
-        # corresponding interval (ie. values from 15:00 to 16:00 are stored at
-        # the time 15:00 for hours granularity)
-        time_query = {
-            '$gte' : objectid.ObjectId.from_datetime(granularity.round_timestamp(start)),
-        }
-
-        if end is not None:
-            # We add one second and use strict less-than to cover all
-            # possible ObjectId values in a given "end" timestamp
-            end += datetime.timedelta(seconds = 1)
-            # No need to round the end time as the last granularity is
-            # automatically included
-            time_query.update({
-                '$lt' : objectid.ObjectId.from_datetime(end),
-            })
 
         pts = collection.find({
             '_id' : time_query,
@@ -673,21 +698,28 @@ class Backend(object):
         db.metrics.drop()
 
 
-    def last_timestamp(self, metric_id=None):
+    def last_timestamp(self, metric=None):
         """
         Returns timestamp of the last record in the database.
         """
+        granularity = api.Granularity.values[0].name
+
+        if metric:
+            granularity = metric.highest_granularity.name
+
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
 
         # Determine the interval that needs downsampling
-        collection = getattr(db.datapoints, api.Granularity.values[0].name)
-        query = { 'm' : metric_id } if metric_id else {}
-        npoints = collection.find(query).count()
+        collection = getattr(db.datapoints, granularity)
 
-        if npoints > 0:
-            return collection.find(query).sort('_id').skip(npoints - 1).next()['_id'].generation_time
-        else:
-            return datetime.datetime.min
+        query = { 'm' : metric.id } if metric else {}
+#        npoints = collection.find(query).
+        # _id is indexed descending, first value is the last inserted
+        try:
+            return collection.find(query).sort('_id', -1).next()['_id'].generation_time
+        except StopIteration:
+            return datetime.datetime.min.replace(tzinfo=pytz.utc)
+
 
     def downsample_metrics(self, query_tags=None):
         """
@@ -717,34 +749,7 @@ class Backend(object):
             if state.timestamp is None or rounded_timestamp > state.timestamp:
                 self._downsample(metric, granularity, rounded_timestamp)
 
-    def _generate_test_object_id(self, timestamp=None):
-        """
-        Generates a new ObjectId with time offset. Used only when testing.
-        """
-
-        oid = objectid.EMPTY
-
-        # 4 bytes current time
-        if timestamp is not None:
-            oid += struct.pack('>i', int(time.mktime(timestamp.timetuple())))
-        else:
-            oid += struct.pack('>i', int(time.time() + self._time_offset.total_seconds()))
-
-        # 3 bytes machine
-        oid += objectid.ObjectId._machine_bytes
-
-        # 2 bytes pid
-        oid += struct.pack('>H', os.getpid() % 0xFFFF)
-
-        # 3 bytes inc
-        objectid.ObjectId._inc_lock.acquire()
-        oid += struct.pack('>i', objectid.ObjectId._inc)[1:4]
-        objectid.ObjectId._inc = (objectid.ObjectId._inc + 1) % 0xFFFFFF
-        objectid.ObjectId._inc_lock.release()
-
-        return objectid.ObjectId(oid)
-
-    def _generate_timed_object_id(self, timestamp, metric_id):
+    def _generate_timed_object_id(self, timestamp=None, metric_id=None):
         """
         Generates a unique ObjectID for a specific timestamp and metric identifier.
 
@@ -755,9 +760,34 @@ class Backend(object):
 
         oid = objectid.EMPTY
         # 4 bytes timestamp
-        oid += struct.pack('>i', int(calendar.timegm(timestamp.timetuple())))
-        # 8 bytes of packed metric identifier
-        oid += metric_id
+
+        if timestamp is not None:
+            if timestamp.tzinfo is not None:
+                timestamp = (timestamp - timestamp.utcoffset()).replace(tzinfo=None)
+
+            timestamp = max(timestamp, datetime.datetime.utcfromtimestamp(0))
+            timestamp = min(timestamp, datetime.datetime.utcfromtimestamp(2147483647))
+            oid += struct.pack('>i', int(calendar.timegm(timestamp.timetuple())))
+        else:
+            oid += struct.pack('>i', int(time.time() + self._time_offset.total_seconds()))
+
+        if metric_id:
+            # 8 bytes of packed metric identifier
+            oid += metric_id
+        else:
+            # generate new metric id
+            # 3 bytes machine
+            oid += objectid.ObjectId._machine_bytes
+
+            # 2 bytes pid
+            oid += struct.pack('>H', os.getpid() % 0xFFFF)
+
+            # 3 bytes inc
+            objectid.ObjectId._inc_lock.acquire()
+            oid += struct.pack('>i', objectid.ObjectId._inc)[1:4]
+            objectid.ObjectId._inc = (objectid.ObjectId._inc + 1) % 0xFFFFFF
+            objectid.ObjectId._inc_lock.release()
+
         return objectid.ObjectId(oid)
 
     def _downsample(self, metric, granularity, current_timestamp):
@@ -777,19 +807,20 @@ class Backend(object):
         state = metric.downsample_state[granularity.name]
         if state.timestamp is not None:
             datapoints = datapoints.find({
+                'm' : metric.id,
                 '_id' : {
                     '$gte' : objectid.ObjectId.from_datetime(state.timestamp),
                     '$lt'  : objectid.ObjectId.from_datetime(current_timestamp)
                 },
-                'm' : metric.id,
+
             })
         else:
             # All datapoints should be selected as we obviously haven't done any downsampling yet
             datapoints = datapoints.find({
+                'm' : metric.id,
                 '_id' : {
                     '$lt' : objectid.ObjectId.from_datetime(current_timestamp)
                 },
-                'm' : metric.id
             })
 
         # Construct downsampler instances
@@ -858,7 +889,8 @@ class Backend(object):
             store_downsampled_datapoint()
 
         # At the end, update the current timestamp in downsample_state
-        metric.downsample_state[granularity.name].timestamp = last_timestamp
+        state.timestamp = last_timestamp
+        metric.save()
 
         # And call callback for all new datapoints
         for args in datapoints_for_callback:
