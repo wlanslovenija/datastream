@@ -98,9 +98,11 @@ class Granularity(object):
     def values(cls):
         if not hasattr(cls, '_values'):
             cls._values = tuple(sorted([
-                getattr(cls, name) for name in cls.__dict__ if \
-                    name != 'values' and inspect.isclass(getattr(cls, name)) and \
-                    getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)
+                getattr(cls, name) for name in cls.__dict__ if
+                name != 'values' and
+                inspect.isclass(getattr(cls, name)) and
+                getattr(cls, name) is not cls._Base and
+                issubclass(getattr(cls, name), cls._Base)
             ], reverse=True))
         return cls._values
 
@@ -110,8 +112,7 @@ assert len(set(granularity.key for granularity in Granularity.values)) == len(Gr
 # _order values should be unique
 assert len(set(granularity._order for granularity in Granularity.values)) == len(Granularity.values)
 
-assert Granularity.Seconds > Granularity.Seconds10 > Granularity.Minutes > \
-       Granularity.Minutes10 > Granularity.Hours > Granularity.Hours6 > Granularity.Days
+assert Granularity.Seconds > Granularity.Seconds10 > Granularity.Minutes > Granularity.Minutes10 > Granularity.Hours > Granularity.Hours6 > Granularity.Days
 
 class Metric(object):
     def __init__(self, all_tags):
@@ -162,31 +163,31 @@ RESERVED_TAGS = (
 )
 
 VALUE_DOWNSAMPLERS = {
-    'mean': 'm', # average of all datapoints
-    'median': 'e', # median of all datapoints
-    'sum': 's', # sum of all datapoints
-    'min': 'l', # minimum value of all dataponts (key mnemonic: l for lower)
-    'max': 'u', # maximum value of all datapoints (key mnemonic: u for upper)
-    'sum_squares': 'q', # sum of squares of all datapoints
-    'std_dev': 'd', # standard deviation of all datapoints
-    'count': 'c', # number of all datapoints
-    'most_often': 'o', # the most often occurring value of all datapoints (key mnemonic: o for often)
-    'least_often': 'r', # the least often occurring value of all datapoints (key mnemonic: r for rare)
-    'frequencies': 'f', # for each value number of occurrences in all datapoints
+    'mean': 'm',  # average of all datapoints
+    'median': 'e',  # median of all datapoints
+    'sum': 's',  # sum of all datapoints
+    'min': 'l',  # minimum value of all dataponts (key mnemonic: l for lower)
+    'max': 'u',  # maximum value of all datapoints (key mnemonic: u for upper)
+    'sum_squares': 'q',  # sum of squares of all datapoints
+    'std_dev': 'd',  # standard deviation of all datapoints
+    'count': 'c',  # number of all datapoints
+    'most_often': 'o',  # the most often occurring value of all datapoints (key mnemonic: o for often)
+    'least_often': 'r',  # the least often occurring value of all datapoints (key mnemonic: r for rare)
+    'frequencies': 'f',  # for each value number of occurrences in all datapoints
 }
 
 # Count of timestamps is the same as count of values
 TIME_DOWNSAMPLERS = {
-    'mean': 'm', # average of all timestamps
-    'median': 'e', # median of all timestamps
-    'first': 'a', # the first timestamp of all datapoints (key mnemonic: a is the first in the alphabet)
-    'last': 'z', # the last timestamp of all datapoints (key mnemonic: z is the last in the alphabet)
-    'intervals_mean': 'i', # average of all interval lengths (key mnemonic: i for interval)
-    'intervals_median': 'n', # median of all interval lengths (key mnemonic: mediaN)
-    'intervals_min': 'l', # minimum of all interval lengths (key mnemonic: l for lower)
-    'intervals_max': 'u', # maximum of all interval lengths (key mnemonic: u for upper)
-    'intervals_sum_squares': 'q', # sum of squares of all interval lengths
-    'intervals_std_dev': 'd', # standard deviation of all interval lengths
+    'mean': 'm',  # average of all timestamps
+    'median': 'e',  # median of all timestamps
+    'first': 'a',  # the first timestamp of all datapoints (key mnemonic: a is the first in the alphabet)
+    'last': 'z',  # the last timestamp of all datapoints (key mnemonic: z is the last in the alphabet)
+    'intervals_mean': 'i',  # average of all interval lengths (key mnemonic: i for interval)
+    'intervals_median': 'n',  # median of all interval lengths (key mnemonic: mediaN)
+    'intervals_min': 'l',  # minimum of all interval lengths (key mnemonic: l for lower)
+    'intervals_max': 'u',  # maximum of all interval lengths (key mnemonic: u for upper)
+    'intervals_sum_squares': 'q',  # sum of squares of all interval lengths
+    'intervals_std_dev': 'd',  # standard deviation of all interval lengths
 }
 
 class Datastream(object):
@@ -313,7 +314,6 @@ class Datastream(object):
 
         if e is not None and ex is not None:
             raise AttributeError("Only one end time can be defined.")
-
 
         if granularity not in Granularity.values:
             raise exceptions.UnsupportedGranularity("'granularity' is not a valid value: '%s'" % granularity)

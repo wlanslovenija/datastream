@@ -77,7 +77,10 @@ class BasicTest(object):
 
         self.datastream.downsample_metrics()
 
-        data = self.datastream.get_data(metric_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()) + self.datastream.backend._time_offset)
+        data = self.datastream.get_data(metric_id,
+                                        datastream.Granularity.Seconds,
+                                        datetime.datetime.utcfromtimestamp(0),
+                                        datetime.datetime.utcfromtimestamp(time.time()) + self.datastream.backend._time_offset)
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]['v'], 42)
 
@@ -96,7 +99,10 @@ class BasicTest(object):
         value_downsamplers_keys = [datastream.VALUE_DOWNSAMPLERS[d] for d in self.value_downsamplers]
         time_downsamplers_keys = [datastream.TIME_DOWNSAMPLERS[d] for d in self.time_downsamplers]
 
-        data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()) + self.datastream.backend._time_offset)
+        data = self.datastream.get_data(metric_id,
+                                        datastream.Granularity.Minutes,
+                                        datetime.datetime.utcfromtimestamp(0),
+                                        datetime.datetime.utcfromtimestamp(time.time()) + self.datastream.backend._time_offset)
         self.assertEqual(len(data), 1)
         self.assertItemsEqual(data[0]['v'].keys(), value_downsamplers_keys)
         self.assertItemsEqual(data[0]['t'].keys(), time_downsamplers_keys)
@@ -206,7 +212,7 @@ class BasicTest(object):
     #@unittest.skip("stress test")
     def test_stress(self):
         metric_id = self.datastream.ensure_metric([{'name': 'stressme'}], [],
-                        self.value_downsamplers, datastream.Granularity.Seconds)
+                                                  self.value_downsamplers, datastream.Granularity.Seconds)
 
         # 1 year, append each second, downsample after each hour
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0)

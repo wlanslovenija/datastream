@@ -11,7 +11,7 @@ from .. import api, exceptions, utils
 DATABASE_ALIAS = 'datastream'
 
 # The largest integer that can be stored in MongoDB; larger values need to use floats
-MAXIMUM_INTEGER = 2**63 - 1
+MAXIMUM_INTEGER = 2 ** 63 - 1
 
 ZERO_TIMEDELTA = datetime.timedelta()
 
@@ -44,9 +44,9 @@ class DownsamplersBase(object):
     def values(cls):
         if not hasattr(cls, '_values'):
             cls._values = tuple([
-                getattr(cls, name) for name in cls.__dict__ if \
-                    name != 'values' and inspect.isclass(getattr(cls, name)) and \
-                    getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)
+                getattr(cls, name) for name in cls.__dict__ if
+                name != 'values' and inspect.isclass(getattr(cls, name)) and
+                getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)
             ])
 
         return cls._values
@@ -181,11 +181,11 @@ class ValueDownsamplers(DownsamplersBase):
             s = float(values[api.VALUE_DOWNSAMPLERS['sum']])
             ss = float(values[api.VALUE_DOWNSAMPLERS['sum_squares']])
             assert self.key not in values
-            
+
             if n == 1:
                 values[self.key] = 0
             else:
-                values[self.key] = (n * ss - s**2) / (n * (n - 1))
+                values[self.key] = (n * ss - s ** 2) / (n * (n - 1))
 
 class TimeDownsamplers(DownsamplersBase):
     """
@@ -260,7 +260,7 @@ class TimeDownsamplers(DownsamplersBase):
 class GranularityField(mongoengine.StringField):
     def __init__(self, **kwargs):
         kwargs.update({
-            'choices' : api.Granularity.values,
+            'choices': api.Granularity.values,
         })
         super(GranularityField, self).__init__(**kwargs)
 
@@ -278,24 +278,24 @@ class DownsampleState(mongoengine.EmbeddedDocument):
     timestamp = mongoengine.DateTimeField()
 
     meta = dict(
-        allow_inheritance = False,
+        allow_inheritance=False,
     )
 
 class Metric(mongoengine.Document):
-    id = mongoengine.SequenceField(primary_key = True, db_alias = DATABASE_ALIAS)
+    id = mongoengine.SequenceField(primary_key=True, db_alias=DATABASE_ALIAS)
     external_id = mongoengine.UUIDField()
     value_downsamplers = mongoengine.ListField(mongoengine.StringField(
-        choices = [downsampler.name for downsampler in ValueDownsamplers.values],
+        choices=[downsampler.name for downsampler in ValueDownsamplers.values],
     ))
     downsample_state = mongoengine.MapField(mongoengine.EmbeddedDocumentField(DownsampleState))
     highest_granularity = GranularityField()
     tags = mongoengine.ListField(mongoengine.DynamicField())
 
     meta = dict(
-        db_alias = DATABASE_ALIAS,
-        collection = 'metrics',
-        indexes = ('tags', 'external_id'),
-        allow_inheritance = False,
+        db_alias=DATABASE_ALIAS,
+        collection='metrics',
+        indexes=('tags', 'external_id'),
+        allow_inheritance=False,
     )
 
 class Backend(object):
@@ -316,17 +316,17 @@ class Backend(object):
         assert \
             set(
                 sum([
-                    [downsampler.name] + list(getattr(downsampler, 'dependencies', ())) \
+                    [downsampler.name] + list(getattr(downsampler, 'dependencies', ()))
                     for downsampler in ValueDownsamplers.values
-                ], [])
+                    ], [])
             ) <= set(api.VALUE_DOWNSAMPLERS.keys())
 
         assert \
             set(
                 sum([
-                    [downsampler.name] + list(getattr(downsampler, 'dependencies', ())) \
+                    [downsampler.name] + list(getattr(downsampler, 'dependencies', ()))
                     for downsampler in TimeDownsamplers.values
-                ], [])
+                    ], [])
             ) <= set(api.TIME_DOWNSAMPLERS.keys())
 
         # Ensure indices on datapoints collections
@@ -402,7 +402,7 @@ class Backend(object):
         """
 
         try:
-            metric = Metric.objects.get(tags__all = query_tags)
+            metric = Metric.objects.get(tags__all=query_tags)
         except Metric.DoesNotExist:
             # Create a new metric
             metric = Metric()
@@ -431,7 +431,7 @@ class Backend(object):
             if highest_granularity != api.Granularity.values[-1]:
                 for granularity in api.Granularity.values[api.Granularity.values.index(highest_granularity) + 1:]:
                     state = DownsampleState()
-                    state.timestamp = None #granularity.round_timestamp(datetime.datetime.utcnow() + self._time_offset)
+                    state.timestamp = None  # granularity.round_timestamp(datetime.datetime.utcnow() + self._time_offset)
                     metric.downsample_state[granularity.name] = state
 
             metric.save()
@@ -447,10 +447,10 @@ class Backend(object):
 
         tags = metric.tags
         tags += [
-            { 'metric_id' : unicode(metric.external_id) },
-            { 'value_downsamplers' : metric.value_downsamplers },
-            { 'time_downsamplers' : self.time_downsamplers },
-            { 'highest_granularity' : metric.highest_granularity },
+            {'metric_id': unicode(metric.external_id)},
+            {'value_downsamplers': metric.value_downsamplers},
+            {'time_downsamplers': self.time_downsamplers},
+            {'highest_granularity': metric.highest_granularity},
         ]
         return tags
 
@@ -463,7 +463,7 @@ class Backend(object):
         """
 
         try:
-            metric = Metric.objects.get(external_id = metric_id)
+            metric = Metric.objects.get(external_id=metric_id)
             tags = self._get_metric_tags(metric)
         except Metric.DoesNotExist:
             raise exceptions.MetricNotFound
@@ -478,7 +478,7 @@ class Backend(object):
         :param tags: A list of new tags
         """
 
-        Metric.objects(external_id = metric_id).update(set__tags = list(self._process_tags(tags)))
+        Metric.objects(external_id=metric_id).update(set__tags=list(self._process_tags(tags)))
 
     def remove_tag(self, metric_id, tag):
         """
@@ -488,7 +488,7 @@ class Backend(object):
         :param tag: Tag value to remove
         """
 
-        Metric.objects(external_id = metric_id).update(pull__tags = tag)
+        Metric.objects(external_id=metric_id).update(pull__tags=tag)
 
     def clear_tags(self, metric_id):
         """
@@ -500,7 +500,7 @@ class Backend(object):
         :param metric_id: Metric identifier
         """
 
-        Metric.objects(external_id = metric_id).update(set__tags = [])
+        Metric.objects(external_id=metric_id).update(set__tags=[])
 
     def _get_metric_queryset(self, query_tags):
         """
@@ -517,13 +517,13 @@ class Backend(object):
         for tag in query_tags[:]:
             if isinstance(tag, dict):
                 if 'metric_id' in tag:
-                    query_set = query_set.filter(external_id = tag['metric_id'])
+                    query_set = query_set.filter(external_id=tag['metric_id'])
                     query_tags.remove(tag)
 
         if not query_tags:
             return query_set
         else:
-            return query_set.filter(tags__all = query_tags)
+            return query_set.filter(tags__all=query_tags)
 
     def find_metrics(self, query_tags=None):
         """
@@ -544,7 +544,7 @@ class Backend(object):
         :param value: Metric value
         """
         try:
-            metric = Metric.objects.get(external_id = metric_id)
+            metric = Metric.objects.get(external_id=metric_id)
         except Metric.DoesNotExist:
             raise exceptions.MetricNotFound
 
@@ -559,16 +559,16 @@ class Backend(object):
                 raise exceptions.InvalidValue("Insert timestamp should be higher than the last inserted.")
 
             object_id = self._generate_timed_object_id(timestamp)
-            datapoint = { '_id' : object_id, 'm' : metric.id, 'v' : value }
+            datapoint = {'_id': object_id, 'm': metric.id, 'v': value}
 
         elif self._time_offset == ZERO_TIMEDELTA:
-            datapoint = { 'm' : metric.id, 'v' : value }
+            datapoint = {'m': metric.id, 'v': value}
 
         else:
             object_id = self._generate_timed_object_id()
-            datapoint = { '_id' : object_id, 'm' : metric.id, 'v' : value }
+            datapoint = {'_id': object_id, 'm': metric.id, 'v': value}
 
-        datapoint['_id'] = collection.insert(datapoint, safe = True)
+        datapoint['_id'] = collection.insert(datapoint, safe=True)
         # Call callback last
         self._callback(metric.external_id, metric.highest_granularity, datapoint)
 
@@ -581,8 +581,8 @@ class Backend(object):
         """
 
         return {
-            't' : datapoint.get('t', datapoint['_id'].generation_time),
-            'v' : datapoint['v']
+            't': datapoint.get('t', datapoint['_id'].generation_time),
+            'v': datapoint['v']
         }
 
     def get_data(self, metric_id, granularity, s=None, e=None, sx=None, ex=None, value_downsamplers=None, time_downsamplers=None):
@@ -615,7 +615,7 @@ class Backend(object):
         s = max(s, datetime.datetime.utcfromtimestamp(0))
         s = min(s, datetime.datetime.utcfromtimestamp(2147483647))
         time_query = {
-            '$gte' : objectid.ObjectId.from_datetime(s),
+            '$gte': objectid.ObjectId.from_datetime(s),
         }
 
         if e is not None or ex is not None:
@@ -633,11 +633,11 @@ class Backend(object):
             e = max(e, datetime.datetime.utcfromtimestamp(0))
             e = min(e, datetime.datetime.utcfromtimestamp(2147483647))
             time_query.update({
-                '$lt' : objectid.ObjectId.from_datetime(e),
+                '$lt': objectid.ObjectId.from_datetime(e),
             })
 
         try:
-            metric = Metric.objects.get(external_id = metric_id)
+            metric = Metric.objects.get(external_id=metric_id)
         except Metric.DoesNotExist:
             raise exceptions.MetricNotFound
 
@@ -680,8 +680,8 @@ class Backend(object):
         collection = getattr(db.datapoints, granularity.name)
 
         pts = collection.find({
-            '_id' : time_query,
-            'm' : metric.id,
+            '_id': time_query,
+            'm': metric.id,
         }, downsamplers).sort('_id')
 
         return [self._format_datapoint(x) for x in pts]
@@ -697,7 +697,6 @@ class Backend(object):
 
         db.metrics.drop()
 
-
     def last_timestamp(self, metric=None):
         """
         Returns timestamp of the last record in the database.
@@ -712,14 +711,13 @@ class Backend(object):
         # Determine the interval that needs downsampling
         collection = getattr(db.datapoints, granularity)
 
-        query = { 'm' : metric.id } if metric else {}
+        query = {'m': metric.id} if metric else {}
 #        npoints = collection.find(query).
         # _id is indexed descending, first value is the last inserted
         try:
             return collection.find(query).sort('_id', -1).next()['_id'].generation_time
         except StopIteration:
             return datetime.datetime.min.replace(tzinfo=pytz.utc)
-
 
     def downsample_metrics(self, query_tags=None):
         """
@@ -807,19 +805,19 @@ class Backend(object):
         state = metric.downsample_state[granularity.name]
         if state.timestamp is not None:
             datapoints = datapoints.find({
-                'm' : metric.id,
-                '_id' : {
-                    '$gte' : objectid.ObjectId.from_datetime(state.timestamp),
-                    '$lt'  : objectid.ObjectId.from_datetime(current_timestamp)
+                'm': metric.id,
+                '_id': {
+                    '$gte': objectid.ObjectId.from_datetime(state.timestamp),
+                    '$lt': objectid.ObjectId.from_datetime(current_timestamp)
                 },
 
             })
         else:
             # All datapoints should be selected as we obviously haven't done any downsampling yet
             datapoints = datapoints.find({
-                'm' : metric.id,
-                '_id' : {
-                    '$lt' : objectid.ObjectId.from_datetime(current_timestamp)
+                'm': metric.id,
+                '_id': {
+                    '$lt': objectid.ObjectId.from_datetime(current_timestamp)
                 },
             })
 
@@ -855,12 +853,12 @@ class Backend(object):
 
             # Insert downsampled datapoint
             point_id = self._generate_timed_object_id(last_timestamp, metric_id)
-            datapoint = { '_id' : point_id, 'm' : metric.id, 'v' : value, 't' : time }
+            datapoint = {'_id': point_id, 'm': metric.id, 'v': value, 't': time}
             downsampled_points.update(
-                { '_id' : point_id, 'm' : metric.id },
+                {'_id': point_id, 'm': metric.id},
                 datapoint,
-                upsert = True,
-                safe = True,
+                upsert=True,
+                safe=True,
             )
 
             datapoints_for_callback.append((metric.external_id, granularity, datapoint))
