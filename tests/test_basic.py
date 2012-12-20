@@ -209,7 +209,7 @@ class BasicTest(object):
         data = self.datastream.get_data(metric_id, self.datastream.Granularity.Days, s=datetime.datetime.min)
         self.assertEqual(len(data), 1)
 
-    #@unittest.skip("stress test")
+    @unittest.skip("stress test")
     def test_stress(self):
         metric_id = self.datastream.ensure_metric([{'name': 'stressme'}], [],
                                                   self.value_downsamplers, datastream.Granularity.Seconds)
