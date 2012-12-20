@@ -110,6 +110,9 @@ class Granularity(object):
 # We want granularity keys to be unique
 assert len(set(granularity.key for granularity in Granularity.values)) == len(Granularity.values)
 
+# We want all keys to be of length == 1
+assert all((len(granularity.key) == 1 for granularity in Granularity.values))
+
 # _order values should be unique
 assert len(set(granularity._order for granularity in Granularity.values)) == len(Granularity.values)
 
