@@ -1,5 +1,7 @@
 import calendar, datetime, inspect, os, struct, time, uuid
 
+import pytz
+
 import pymongo
 from bson import objectid
 
@@ -200,7 +202,7 @@ class TimeDownsamplers(DownsamplersBase):
             self.key = api.TIME_DOWNSAMPLERS[self.name]
 
         def _to_datetime(self, timestamp):
-            return datetime.datetime.utcfromtimestamp(int(timestamp))
+            return datetime.datetime.fromtimestamp(int(timestamp), pytz.utc)
 
     class Mean(_Base):
         """
@@ -425,7 +427,8 @@ class Backend(object):
             if highest_granularity != api.Granularity.values[-1]:
                 for granularity in api.Granularity.values[api.Granularity.values.index(highest_granularity) + 1:]:
                     state = DownsampleState()
-                    state.timestamp = None #granularity.round_timestamp(datetime.datetime.utcnow() + self._time_offset)
+                    # TODO: Or maybe: granularity.round_timestamp(datetime.datetime.now(pytz.utc) + self._time_offset)
+                    state.timestamp = None
                     metric.downsample_state[granularity.name] = state
 
             metric.save()
@@ -547,13 +550,10 @@ class Backend(object):
         # Insert the datapoint into appropriate granularity
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
         collection = getattr(db.datapoints, metric.highest_granularity.name)
-        if timestamp is not None:
-            object_id = self._generate_test_object_id(timestamp)
-            datapoint = { '_id' : object_id, 'm' : metric.id, 'v' : value }
-        elif self._time_offset == ZERO_TIMEDELTA:
+        if timestamp is None and self._time_offset == ZERO_TIMEDELTA:
             datapoint = { 'm' : metric.id, 'v' : value }
         else:
-            object_id = self._generate_test_object_id()
+            object_id = self._generate_object_id(timestamp)
             datapoint = { '_id' : object_id, 'm' : metric.id, 'v' : value }
 
         datapoint['_id'] = collection.insert(datapoint, safe = True)
@@ -653,7 +653,7 @@ class Backend(object):
 
         return [self._format_datapoint(x) for x in pts]
 
-    def delete_metrics(self):
+    def delete_metrics(self, query_tags=None):
         """
         Deletes datapoints for all metrics matching the specified
         query tags. If no query tags are specified, all downstream-related
@@ -662,26 +662,15 @@ class Backend(object):
         :param query_tags: Tags that should be matched to metrics
         """
 
-        db = mongoengine.connection.get_db(DATABASE_ALIAS)
-        for granularity in api.Granularity.values:
-            collection = getattr(db.datapoints, granularity.name)
-            collection.drop()
-
-        db.metrics.drop()
-
-    def last_timestamp(self):
-        """
-        Returns timestamp of the last record in the database.
-        """
-        db = mongoengine.connection.get_db(DATABASE_ALIAS)
-
-        # Determine the interval that needs downsampling
-        datapoints = getattr(db.datapoints, api.Granularity.values[0].name)
-        npoints = datapoints.find().count()
-        if npoints > 0:
-            return datapoints.find().skip(npoints - 1).next()['_id'].generation_time
+        if query_tags is None:
+            db = mongoengine.connection.get_db(DATABASE_ALIAS)
+            for granularity in api.Granularity.values:
+                collection = getattr(db.datapoints, granularity.name)
+                collection.drop()
+            db.metrics.drop()
         else:
-            return datetime.datetime.min
+            # TODO: Implement
+            raise NotImplementedError
 
     def downsample_metrics(self, query_tags=None):
         """
@@ -691,7 +680,7 @@ class Backend(object):
         :param query_tags: Tags that should be matched to metrics
         """
 
-        now = datetime.datetime.utcnow() + self._time_offset
+        now = datetime.datetime.now(pytz.utc) + self._time_offset
         qs = self._get_metric_queryset(query_tags)
 
         for metric in qs:
@@ -708,19 +697,21 @@ class Backend(object):
         for granularity in api.Granularity.values[api.Granularity.values.index(metric.highest_granularity) + 1:]:
             state = metric.downsample_state.get(granularity.name, None)
             rounded_timestamp = granularity.round_timestamp(datum_timestamp)
-            if state.timestamp is None or rounded_timestamp > state.timestamp:
+            if state is None or state.timestamp is None or rounded_timestamp > state.timestamp:
                 self._downsample(metric, granularity, rounded_timestamp)
 
-    def _generate_test_object_id(self, timestamp=None):
+    def _generate_object_id(self, timestamp=None):
         """
-        Generates a new ObjectId with time offset. Used only when testing.
+        Generates a new ObjectId.
+
+        :param timestamp: Desired timestamp (optional)
         """
 
         oid = objectid.EMPTY
 
         # 4 bytes current time
         if timestamp is not None:
-            oid += struct.pack('>i', int(time.mktime(timestamp.timetuple())))
+            oid += struct.pack('>i', int(calendar.timegm(timestamp.utctimetuple()) + self._time_offset.total_seconds()))
         else:
             oid += struct.pack('>i', int(time.time() + self._time_offset.total_seconds()))
 
@@ -738,7 +729,7 @@ class Backend(object):
 
         return objectid.ObjectId(oid)
 
-    def _generate_timed_object_id(self, timestamp, metric_id):
+    def _generate_timed_metric_object_id(self, timestamp, metric_id):
         """
         Generates a unique ObjectID for a specific timestamp and metric identifier.
 
@@ -749,7 +740,7 @@ class Backend(object):
 
         oid = objectid.EMPTY
         # 4 bytes timestamp
-        oid += struct.pack('>i', int(calendar.timegm(timestamp.timetuple())))
+        oid += struct.pack('>i', int(calendar.timegm(timestamp.utctimetuple())))
         # 8 bytes of packed metric identifier
         oid += metric_id
         return objectid.ObjectId(oid)
@@ -801,7 +792,7 @@ class Backend(object):
 
         datapoints_for_callback = []
 
-        def store_downsampled_datapoint():
+        def store_downsampled_datapoint(timestamp):
             value = {}
             time = {}
             for x in value_downsamplers:
@@ -817,7 +808,7 @@ class Backend(object):
                 x.initialize()
 
             # Insert downsampled datapoint
-            point_id = self._generate_timed_object_id(last_timestamp, metric_id)
+            point_id = self._generate_timed_metric_object_id(timestamp, metric_id)
             datapoint = { '_id' : point_id, 'm' : metric.id, 'v' : value, 't' : time }
             downsampled_points.update(
                 { '_id' : point_id, 'm' : metric.id },
@@ -837,7 +828,7 @@ class Backend(object):
                 for x in value_downsamplers + time_downsamplers:
                     x.initialize()
             elif last_timestamp != rounded_timestamp:
-                store_downsampled_datapoint()
+                store_downsampled_datapoint(rounded_timestamp)
 
             last_timestamp = rounded_timestamp
 
@@ -845,11 +836,11 @@ class Backend(object):
             for x in value_downsamplers:
                 x.update(datapoint['v'])
             for x in time_downsamplers:
-                x.update(int(calendar.timegm(ts.timetuple())))
+                x.update(int(calendar.timegm(ts.utctimetuple())))
 
         # Don't forget to store the last downsampled datapoint
         if last_timestamp is not None:
-            store_downsampled_datapoint()
+            store_downsampled_datapoint(last_timestamp)
 
         # At the end, update the current timestamp in downsample_state
         metric.downsample_state[granularity.name].timestamp = last_timestamp
