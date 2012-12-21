@@ -536,6 +536,7 @@ class Backend(object):
 
         :param metric_id: Metric identifier
         :param value: Metric value
+        :param timestamp: Timestamp of the value, must be equal or larger (newer) than the latest one, monotonically increasing (optional)
         """
 
         try:
@@ -652,17 +653,21 @@ class Backend(object):
 
         return [self._format_datapoint(x) for x in pts]
 
-    def remove_data(self):
+    def delete_metrics(self):
         """
-        Removes datastream data from the database.
+        Deletes datapoints for all metrics matching the specified
+        query tags. If no query tags are specified, all downstream-related
+        data is deleted from the backend.
+
+        :param query_tags: Tags that should be matched to metrics
         """
+
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
         for granularity in api.Granularity.values:
             collection = getattr(db.datapoints, granularity.name)
             collection.drop()
 
         db.metrics.drop()
-
 
     def last_timestamp(self):
         """

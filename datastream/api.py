@@ -294,6 +294,7 @@ class Datastream(object):
 
         :param metric_id: Metric identifier
         :param value: Metric value
+        :param timestamp: Timestamp of the value, must be equal or larger (newer) than the latest one, monotonically increasing (optional)
         """
 
         return self.backend.insert(metric_id, value, timestamp)
@@ -326,18 +327,6 @@ class Datastream(object):
 
         return self.backend.get_data(metric_id, granularity, start, end, value_downsamplers, time_downsamplers)
 
-    def remove_data(self):
-        """
-        Removes datastream data from the database.
-        """
-        self.backend.remove_data()
-
-    def _last_timestamp(self):
-        """
-        Returns timestamp of the last record in the database.
-        """
-        return self.backend.last_timestamp()
-
     def downsample_metrics(self, query_tags=None):
         """
         Requests the backend to downsample all metrics matching the specified
@@ -347,3 +336,14 @@ class Datastream(object):
         """
 
         return self.backend.downsample_metrics(query_tags)
+
+    def delete_metrics(self, query_tags=None):
+        """
+        Deletes datapoints for all metrics matching the specified
+        query tags. If no query tags are specified, all downstream-related
+        data is deleted from the backend.
+
+        :param query_tags: Tags that should be matched to metrics
+        """
+
+        self.backend.delete_metrics(query_tags)
