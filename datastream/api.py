@@ -100,11 +100,13 @@ class Granularity(object):
     @utils.class_property
     def values(cls):
         if not hasattr(cls, '_values'):
-            cls._values = tuple(sorted([
-                getattr(cls, name) for name in cls.__dict__ if \
-                    name != 'values' and inspect.isclass(getattr(cls, name)) and \
-                    getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)
-            ], reverse=True))
+            cls._values = tuple(sorted(
+                [
+                    getattr(cls, name) for name in cls.__dict__ if
+                        name != 'values' and inspect.isclass(getattr(cls, name)) and getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)
+                ],
+                reverse=True
+            ))
         return cls._values
 
 # We want granularity keys to be unique
@@ -116,8 +118,7 @@ assert all((len(granularity.key) == 1 for granularity in Granularity.values))
 # _order values should be unique
 assert len(set(granularity._order for granularity in Granularity.values)) == len(Granularity.values)
 
-assert Granularity.Seconds > Granularity.Seconds10 > Granularity.Minutes > \
-       Granularity.Minutes10 > Granularity.Hours > Granularity.Hours6 > Granularity.Days
+assert Granularity.Seconds > Granularity.Seconds10 > Granularity.Minutes > Granularity.Minutes10 > Granularity.Hours > Granularity.Hours6 > Granularity.Days
 
 class Metric(object):
     def __init__(self, all_tags):
@@ -208,7 +209,7 @@ class Datastream(object):
         Class constructor.
 
         :param backend: Backend instance
-        :param callback: Callback to call when new datapoint is inserted or downsampled
+        :param callback: Callback to call when new datapoint is appended or downsampled
         """
 
         self.backend = backend
@@ -288,29 +289,54 @@ class Datastream(object):
 
         return self.backend.find_metrics(query_tags)
 
-    def insert(self, metric_id, value, timestamp=None):
+    def append(self, metric_id, value, timestamp=None):
         """
-        Inserts a data point into the data stream.
+        Appends a datapoint into the datastream.
 
         :param metric_id: Metric identifier
-        :param value: Metric value
-        :param timestamp: Timestamp of the value, must be equal or larger (newer) than the latest one, monotonically increasing (optional)
+        :param value: Datapoint value
+        :param timestamp: Datapoint timestamp, must be equal or larger (newer) than the latest one, monotonically increasing (optional)
         """
 
-        return self.backend.insert(metric_id, value, timestamp)
+        if timestamp is not None and timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=pytz.utc)
 
-    def get_data(self, metric_id, granularity, start, end=None, value_downsamplers=None, time_downsamplers=None):
+        # TODO: Should we limit timestamp to max(timestamp, datetime.datetime.utcfromtimestamp(0)) and min(timestamp, datetime.datetime.utcfromtimestamp(2147483647))
+
+        return self.backend.append(metric_id, value, timestamp)
+
+    def get_data(self, metric_id, granularity, start=None, end=None, start_exclusive=None, end_exclusive=None, value_downsamplers=None, time_downsamplers=None):
         """
         Retrieves data from a certain time range and of a certain granularity.
 
         :param metric_id: Metric identifier
         :param granularity: Wanted granularity
-        :param start: Time range start
-        :param end: Time range end (optional)
+        :param start: Time range start, including the start
+        :param end: Time range end, excluding the end (optional)
+        :param start_exclusive: Time range start, excluding the start
+        :param end_exclusive: Time range end, excluding the end (optional)
         :param value_downsamplers: The list of downsamplers to limit datapoint values to (optional)
         :param time_downsamplers: The list of downsamplers to limit timestamp values to (optional)
         :return: A list of datapoints
         """
+
+        if start is None == start_exclusive is None:
+            raise AttributeError("One and only one time range start must be specified.")
+
+        if end is not None and end_exclusive is not None:
+            raise AttributeError("Only one time range end can be specified.")
+
+        if start is not None and start.tzinfo is None:
+            start = start.replace(tzinfo=pytz.utc)
+
+        if end is not None and end.tzinfo is None:
+            end = end.replace(tzinfo=pytz.utc)
+
+        if start_exclusive is not None and start_exclusive.tzinfo is None:
+            start_exclusive = start_exclusive.replace(tzinfo=pytz.utc)
+
+        if end_exclusive is not None and end_exclusive.tzinfo is None:
+            end_exclusive = end_exclusive.replace(tzinfo=pytz.utc)
 
         if granularity not in Granularity.values:
             raise exceptions.UnsupportedGranularity("'granularity' is not a valid value: '%s'" % granularity)
@@ -325,7 +351,7 @@ class Datastream(object):
             if len(unsupported_downsamplers) > 0:
                 raise exceptions.UnsupportedDownsampler("Unsupported time downsampler(s): %s" % unsupported_downsamplers)
 
-        return self.backend.get_data(metric_id, granularity, start, end, value_downsamplers, time_downsamplers)
+        return self.backend.get_data(metric_id, granularity, start, end, start_exclusive, end_exclusive, value_downsamplers, time_downsamplers)
 
     def downsample_metrics(self, query_tags=None):
         """

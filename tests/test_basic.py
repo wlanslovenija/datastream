@@ -3,12 +3,14 @@ import datetime, time, unittest
 import mongoengine
 
 import datastream
+
 from datastream.backends import mongodb
 
 class BasicTest(object):
     def _test_callback(self, metric_id, granularity, datapoint):
         self._callback_points.append((metric_id, granularity, datapoint))
 
+    #@unittest.skip("performing stress test")
     def test_basic(self):
         query_tags = [
             {'name': 'foobar'},
@@ -53,7 +55,11 @@ class BasicTest(object):
         # Callback should not have been fired
         self.assertItemsEqual(self._callback_points, [])
 
-        self.datastream.insert(metric_id, 42)
+        self.datastream.append(metric_id, 42)
+        self.assertRaises(datastream.exceptions.InvalidTimestamp, lambda: self.datastream.append(metric_id, 42, datetime.datetime.min))
+
+        data = self.datastream.get_data(metric_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), end_exclusive=datetime.datetime.utcfromtimestamp(time.time()))
+        self.assertEqual(len(data), 0)
 
         data = self.datastream.get_data(metric_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
         self.assertEqual(len(data), 1)
@@ -72,7 +78,12 @@ class BasicTest(object):
 
         self.datastream.downsample_metrics()
 
-        data = self.datastream.get_data(metric_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()) + self.datastream.backend._time_offset)
+        data = self.datastream.get_data(
+            metric_id,
+            datastream.Granularity.Seconds,
+            datetime.datetime.utcfromtimestamp(0),
+            datetime.datetime.utcfromtimestamp(time.time()) + self.datastream.backend._time_offset,
+        )
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]['v'], 42)
 
@@ -91,7 +102,12 @@ class BasicTest(object):
         value_downsamplers_keys = [datastream.VALUE_DOWNSAMPLERS[d] for d in self.value_downsamplers]
         time_downsamplers_keys = [datastream.TIME_DOWNSAMPLERS[d] for d in self.time_downsamplers]
 
-        data = self.datastream.get_data(metric_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()) + self.datastream.backend._time_offset)
+        data = self.datastream.get_data(
+            metric_id,
+            datastream.Granularity.Minutes,
+            datetime.datetime.utcfromtimestamp(0),
+            datetime.datetime.utcfromtimestamp(time.time()) + self.datastream.backend._time_offset,
+        )
         self.assertEqual(len(data), 1)
         self.assertItemsEqual(data[0]['v'].keys(), value_downsamplers_keys)
         self.assertItemsEqual(data[0]['t'].keys(), time_downsamplers_keys)
@@ -107,6 +123,122 @@ class BasicTest(object):
         self.assertEqual(len(data), 1)
         self.assertItemsEqual(data[0]['v'].keys(), (datastream.VALUE_DOWNSAMPLERS['count'],))
         self.assertEqual(data[0]['v'][datastream.VALUE_DOWNSAMPLERS['count']], 1)
+
+        # backend must implement checks for dates that translate out of integer range
+        # also check if last_timestamp() works when there is no value in datastream
+        # cannot insert min because it is not larger than any value
+        metric_id = self.datastream.ensure_metric([{'name': 'foopub'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        self.datastream.append(metric_id, 1, datetime.datetime.min + datetime.timedelta(1))
+        self.datastream.append(metric_id, 1, datetime.datetime.max)
+
+        # test monotonic insert check
+        metric_id = self.datastream.ensure_metric([{'name': 'fooclub'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        self.datastream.append(metric_id, 1, datetime.datetime(2000, 1, 1, 12, 0, 0))
+        self.datastream.append(metric_id, 1, datetime.datetime(2000, 1, 3, 12, 0, 0))
+        self.assertRaises(datastream.exceptions.InvalidValue, lambda: self.datastream.append(metric_id, 1, datetime.datetime(2000, 1, 2, 12, 0, 0)))
+
+    #@unittest.skip("performing stress test")
+    def test_granularities(self):
+        query_tags = [
+            {'name': 'foodata'},
+        ]
+        tags = []
+
+        metric_id = self.datastream.ensure_metric(query_tags, tags, self.value_downsamplers, datastream.Granularity.Seconds)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0)
+        for i in range(1200):
+            self.datastream.append(metric_id, i, ts)
+            ts += datetime.timedelta(0, 1)
+
+        self.datastream.downsample_metrics()
+
+        s = datetime.datetime(2000, 1, 1, 12, 0, 0)
+        e = datetime.datetime(2000, 1, 1, 12, 1, 0)
+
+        # SECONDS
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start=s, end=e)
+        self.assertEqual(len(data), 61)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start_exclusive=s, end=e)
+        self.assertEqual(len(data), 60)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start=s, end_exclusive=e)
+        self.assertEqual(len(data), 60)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start_exclusive=s, end_exclusive=e)
+        self.assertEqual(len(data), 59)
+
+        #10 SECONDS
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds10, start=s, end=e)
+        self.assertEqual(len(data), 7)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds10, start_exclusive=s, end=e)
+        self.assertEqual(len(data), 6)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds10, start=s, end_exclusive=e)
+        self.assertEqual(len(data), 6)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds10, start_exclusive=s, end_exclusive=e)
+        self.assertEqual(len(data), 5)
+
+        # MINUTES
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Minutes, start=s, end=e)
+        self.assertEqual(len(data), 2)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Minutes, start_exclusive=s, end=e)
+        self.assertEqual(len(data), 1)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Minutes, start=s, end_exclusive=e)
+        self.assertEqual(len(data), 1)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Minutes, start_exclusive=s, end_exclusive=e)
+        self.assertEqual(len(data), 0)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Minutes, start=datetime.datetime.min, end=datetime.datetime.max)
+        self.assertEqual(len(data), 20)
+
+        # 10 MINUTES
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Minutes10, start=datetime.datetime.min)
+        self.assertEqual(len(data), 2)
+
+        # HOURS
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Hours, start=datetime.datetime.min)
+        self.assertEqual(len(data), 1)
+
+        # 6 HOURS
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Hours6, start=datetime.datetime.min)
+        self.assertEqual(len(data), 1)
+
+        # DAYS
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Days, start=datetime.datetime.min)
+        self.assertEqual(len(data), 1)
+
+    @unittest.skip("stress test")
+    def test_stress(self):
+        metric_id = self.datastream.ensure_metric(
+            [{'name': 'stressme'}],
+            [],
+            self.value_downsamplers,
+            datastream.Granularity.Seconds,
+        )
+
+        # 1 year, append each second, downsample after each hour
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0)
+        start_time = time.time()
+        for i in range(1, 31536000):
+            self.datastream.append(metric_id, i, ts)
+            ts += datetime.timedelta(0, 1)
+
+            if not i % 3600:
+                t1 = time.time()
+                self.datastream.downsample_metrics()
+                t2 = time.time()
+                print "%08d insert: %d:%02d    downsample: %d:%02d" % \
+                      (i, (t1 - start_time) / 60, (t1 - start_time) % 60,
+                       (t2 - t1) / 60, (t2 - t1) % 60)
+
+                start_time = t2
 
 class MongoDBBasicTest(BasicTest, unittest.TestCase):
     database_name = 'test_database'

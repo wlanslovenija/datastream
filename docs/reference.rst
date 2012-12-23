@@ -6,7 +6,7 @@ API
 ---
 
 The basic API operations are implemented in backends, which are
-responsible for storing the data points, performing downsampling and executing
+responsible for storing the datapoints, performing downsampling and executing
 time span queries. Supported backends are MongoDB and Tempo.
 
 .. autoclass:: datastream.api.Datastream

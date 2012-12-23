@@ -15,3 +15,6 @@ class UnsupportedGranularity(DatastreamException, ValueError):
 
 class ReservedTagNameError(DatastreamException, ValueError):
     pass
+
+class InvalidTimestamp(DatastreamException, ValueError):
+    pass
