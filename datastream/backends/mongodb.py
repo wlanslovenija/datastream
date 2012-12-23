@@ -600,7 +600,7 @@ class Backend(object):
                         raise exceptions.InvalidTimestamp("Datapoint timestamp must be equal or larger (newer) than the latest one '%s': %s" % (latest_timestamp, timestamp))
 
                 # We always check this because it does not require database access
-                self._timestamp_after_downsampled(timestamp)
+                self._timestamp_after_downsampled(metric, timestamp)
 
             object_id = self._generate_object_id(timestamp)
             datapoint = {'_id' : object_id, 'm' : metric.id, 'v' : value}
@@ -610,7 +610,7 @@ class Backend(object):
         if timestamp is None:
             # When timestamp is not specified, database generates one, so we check it here
             try:
-                self._timestamp_after_downsampled(datapoint['_id'].generation_time)
+                self._timestamp_after_downsampled(metric, datapoint['_id'].generation_time)
             except exceptions.InvalidTimestamp:
                 # Cleanup
                 collection.remove(datapoint['_id'], safe=True)
