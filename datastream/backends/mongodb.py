@@ -556,6 +556,19 @@ class Backend(object):
 
         raise exceptions.InvalidTimestamp("Timestamp is out of range: %s" % timestamp)
 
+    def _timestamp_after_downsampled(self, metric, timestamp):
+        """
+        We require that once a period has been downsampled, no new datapoint can be added there.
+        """
+
+        for granularity in api.Granularity.values[api.Granularity.values.index(metric.highest_granularity) + 1:]:
+            state = metric.downsample_state.get(granularity.name, None)
+            rounded_timestamp = granularity.round_timestamp(timestamp)
+            if state is None or state.timestamp is None or rounded_timestamp > state.timestamp:
+                continue
+            else:
+                raise exceptions.InvalidTimestamp("Metric '%s' at granularity '%s' has already been downsampled until '%s' and datapoint timestamp falls into that range: %s" % (metric.external_id, granularity, state.timestamp, timestamp))
+
     def append(self, metric_id, value, timestamp=None, check_timestamp=True):
         """
         Appends a datapoint into the datastream.
@@ -577,16 +590,33 @@ class Backend(object):
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
         collection = getattr(db.datapoints, metric.highest_granularity.name)
         if timestamp is None and self._time_offset == ZERO_TIMEDELTA:
-            datapoint = { 'm' : metric.id, 'v' : value }
+            datapoint = {'m' : metric.id, 'v' : value}
         else:
-            # TODO: There is a race condition here, between check and insert
-            if check_timestamp and timestamp is not None and timestamp < self._last_timestamp(metric):
-                raise exceptions.InvalidTimestamp("Datapoint timestamp must be equal or larger (newer) than the latest one.")
+            if timestamp is not None:
+                if check_timestamp:
+                    # TODO: There is a race condition here, between check and insert
+                    latest_timestamp = self._last_timestamp(metric)
+                    if timestamp < latest_timestamp:
+                        raise exceptions.InvalidTimestamp("Datapoint timestamp must be equal or larger (newer) than the latest one '%s': %s" % (latest_timestamp, timestamp))
+
+                # We always check this because it does not require database access
+                self._timestamp_after_downsampled(timestamp)
 
             object_id = self._generate_object_id(timestamp)
-            datapoint = { '_id' : object_id, 'm' : metric.id, 'v' : value }
+            datapoint = {'_id' : object_id, 'm' : metric.id, 'v' : value}
 
         datapoint['_id'] = collection.insert(datapoint, safe=True)
+
+        if timestamp is None:
+            # When timestamp is not specified, database generates one, so we check it here
+            try:
+                self._timestamp_after_downsampled(datapoint['_id'].generation_time)
+            except exceptions.InvalidTimestamp:
+                # Cleanup
+                collection.remove(datapoint['_id'], safe=True)
+
+                raise
+
         # Call callback last
         self._callback(metric.external_id, metric.highest_granularity, datapoint)
 
@@ -746,34 +776,37 @@ class Backend(object):
         except StopIteration:
             return datetime.datetime.min.replace(tzinfo=pytz.utc)
 
-    def downsample_metrics(self, query_tags=None):
+    def downsample_metrics(self, query_tags=None, until=None):
         """
         Requests the backend to downsample all metrics matching the specified
         query tags.
 
         :param query_tags: Tags that should be matched to metrics
+        :param until: Downsample until which datapoints, inclusive (optional, otherwise all until the current time)
         """
 
-        now = datetime.datetime.now(pytz.utc) + self._time_offset
-        qs = self._get_metric_queryset(query_tags)
+        if until is None:
+            until = datetime.datetime.now(pytz.utc) + self._time_offset
 
-        for metric in qs:
-            self._downsample_check(metric, now)
+        for metric in self._get_metric_queryset(query_tags):
+            self._downsample_check(metric, until)
 
-    def _downsample_check(self, metric, datum_timestamp):
+    def _downsample_check(self, metric, until_timestamp):
         """
         Checks if we need to perform any metric downsampling. In case it is needed,
         we perform downsampling.
 
         :param metric: Metric instance
-        :param datum_timestamp: Timestamp of the newly inserted datum
+        :param until_timestamp: Timestamp of the newly inserted datum
         """
 
         for granularity in api.Granularity.values[api.Granularity.values.index(metric.highest_granularity) + 1:]:
             state = metric.downsample_state.get(granularity.name, None)
-            rounded_timestamp = granularity.round_timestamp(datum_timestamp)
+            rounded_timestamp = granularity.round_timestamp(until_timestamp)
             if state is None or state.timestamp is None or rounded_timestamp > state.timestamp:
                 self._downsample(metric, granularity, rounded_timestamp)
+            elif rounded_timestamp < state.timestamp:
+                raise exceptions.InvalidTimestamp("Metric '%s' at granularity '%s' has already been downsampled" % (metric.external_id, granularity))
 
     def _generate_object_id(self, timestamp=None):
         """
@@ -821,17 +854,20 @@ class Backend(object):
         oid += metric_id
         return objectid.ObjectId(oid)
 
-    def _downsample(self, metric, granularity, current_timestamp):
+    def _downsample(self, metric, granularity, last_timestamp):
         """
         Performs downsampling on the given metric and granularity.
 
         :param metric: Metric instance
         :param granularity: Lower granularity to downsample into
-        :param current_timestamp: Timestamp of the last inserted datapoint, rounded
-                                  to specified granularity
+        :param last_timestamp: Timestamp of the last datapoint to downsample, rounded
+                               to specified granularity
         """
 
-        assert granularity.round_timestamp(current_timestamp) == current_timestamp
+        assert granularity.round_timestamp(last_timestamp) == last_timestamp
+        assert metric.downsample_state.get(granularity.name, None) is None or metric.downsample_state.get(granularity.name, None).timestamp is None or last_timestamp > metric.downsample_state.get(granularity.name, None).timestamp
+
+        self._supported_timestamp_range(last_timestamp)
 
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
 
@@ -845,7 +881,7 @@ class Backend(object):
                     '$gte': objectid.ObjectId.from_datetime(state.timestamp),
                     # It is really important that current_timestamp is correctly rounded for given granularity,
                     # because we want that only none or all datapoints for granularity periods are selected
-                    '$lt': objectid.ObjectId.from_datetime(current_timestamp),
+                    '$lt': objectid.ObjectId.from_datetime(last_timestamp),
                 },
 
             })
@@ -859,7 +895,7 @@ class Backend(object):
                 '_id': {
                     # It is really important that current_timestamp is correctly rounded for given granularity,
                     # because we want that only none or all datapoints for granularity periods are selected
-                    '$lt': objectid.ObjectId.from_datetime(current_timestamp),
+                    '$lt': objectid.ObjectId.from_datetime(last_timestamp),
                 },
             })
 
@@ -898,11 +934,6 @@ class Backend(object):
             datapoint = {'_id': point_id, 'm': metric.id, 'v': value, 't': time}
 
             # We want to process each granularity period only once, we want it to fail if there is an error in this
-            # This could maybe happen if downsample_metrics is called with some future timestamp which does not yet exist in the
-            # database, but then later on datasample is added which fails in that same granularity period which was already processed
-            # But it seems that in that case _downsample would simply not be called
-            # This is an issue because we always take current time in downsample_metrics, but we allow arbitrary timestamps in append
-            # TODO: Do test cases for all this, probably we should not take current time there, but last timestamp
             # TODO: We should probably create some API function which reprocesses everything and fixes any inconsistencies
             downsampled_points.insert(datapoint, safe=True)
 
