@@ -289,14 +289,15 @@ class Datastream(object):
 
         return self.backend.find_metrics(query_tags)
 
-    def append(self, metric_id, value, timestamp=None):
+    def append(self, metric_id, value, timestamp=None, check_timestamp=True):
         """
         Appends a datapoint into the datastream.
 
         :param metric_id: Metric identifier
         :param value: Datapoint value
         :param timestamp: Datapoint timestamp, must be equal or larger (newer) than the latest one, monotonically increasing (optional)
-        """
+        :param check_timestamp: Check if timestamp is equal or larger (newer) than the latest one (default: true)
+         """
 
         if timestamp is not None and timestamp.tzinfo is None:
             timestamp = timestamp.replace(tzinfo=pytz.utc)

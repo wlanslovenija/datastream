@@ -556,13 +556,14 @@ class Backend(object):
 
         raise exceptions.InvalidTimestamp("Timestamp is out of range: %s" % timestamp)
 
-    def append(self, metric_id, value, timestamp=None):
+    def append(self, metric_id, value, timestamp=None, check_timestamp=True):
         """
         Appends a datapoint into the datastream.
 
         :param metric_id: Metric identifier
         :param value: Datapoint value
         :param timestamp: Datapoint timestamp, must be equal or larger (newer) than the latest one, monotonically increasing (optional)
+        :param check_timestamp: Check if timestamp is equal or larger (newer) than the latest one (default: true)
         """
 
         self._supported_timestamp_range(timestamp)
@@ -578,7 +579,8 @@ class Backend(object):
         if timestamp is None and self._time_offset == ZERO_TIMEDELTA:
             datapoint = { 'm' : metric.id, 'v' : value }
         else:
-            if timestamp is not None and timestamp < self._last_timestamp(metric):
+            # TODO: There is a race condition here, between check and insert
+            if check_timestamp and timestamp is not None and timestamp < self._last_timestamp(metric):
                 raise exceptions.InvalidTimestamp("Datapoint timestamp must be equal or larger (newer) than the latest one.")
 
             object_id = self._generate_object_id(timestamp)
