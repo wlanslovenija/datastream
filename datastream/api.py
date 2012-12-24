@@ -304,7 +304,7 @@ class Datastream(object):
 
         # TODO: Should we limit timestamp to max(timestamp, datetime.datetime.utcfromtimestamp(0)) and min(timestamp, datetime.datetime.utcfromtimestamp(2147483647))
 
-        return self.backend.append(metric_id, value, timestamp)
+        return self.backend.append(metric_id, value, timestamp, check_timestamp)
 
     def get_data(self, metric_id, granularity, start=None, end=None, start_exclusive=None, end_exclusive=None, value_downsamplers=None, time_downsamplers=None):
         """
@@ -361,7 +361,8 @@ class Datastream(object):
         cannot be added to it anymore.
 
         :param query_tags: Tags that should be matched to metrics
-        :param until: Downsample until which datapoints, inclusive (optional, otherwise all until the current time)
+        :param until: Timestamp until which to downsample, not including datapoints
+                      at a timestamp (optional, otherwise all until the current time)
         """
 
         if until is not None and until.tzinfo is None:

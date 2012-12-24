@@ -576,7 +576,7 @@ class Backend(object):
         for granularity in api.Granularity.values[api.Granularity.values.index(metric.highest_granularity) + 1:]:
             state = metric.downsample_state.get(granularity.name, None)
             rounded_timestamp = granularity.round_timestamp(timestamp)
-            if state is None or state.timestamp is None or rounded_timestamp > state.timestamp:
+            if state is None or state.timestamp is None or rounded_timestamp >= state.timestamp:
                 continue
             else:
                 raise exceptions.InvalidTimestamp("Metric '%s' at granularity '%s' has already been downsampled until '%s' and datapoint timestamp falls into that range: %s" % (metric.external_id, granularity, state.timestamp, timestamp))
@@ -604,22 +604,22 @@ class Backend(object):
         if timestamp is None and self._time_offset == ZERO_TIMEDELTA:
             datapoint = {'m' : metric.id, 'v' : value}
         else:
-            if timestamp is not None:
-                if check_timestamp:
-                    # TODO: There is a race condition here, between check and insert
-                    latest_timestamp = self._last_timestamp(metric)
-                    if timestamp < latest_timestamp:
-                        raise exceptions.InvalidTimestamp("Datapoint timestamp must be equal or larger (newer) than the latest one '%s': %s" % (latest_timestamp, timestamp))
-
-                # We always check this because it does not require database access
-                self._timestamp_after_downsampled(metric, timestamp)
-
             object_id = self._generate_object_id(timestamp)
+
+            if check_timestamp:
+                # TODO: There is a race condition here, between check and insert
+                latest_timestamp = self._last_timestamp(metric)
+                if object_id.generation_time < latest_timestamp:
+                    raise exceptions.InvalidTimestamp("Datapoint timestamp must be equal or larger (newer) than the latest one '%s': %s" % (latest_timestamp, object_id.generation_time))
+
+            # We always check this because it does not require database access
+            self._timestamp_after_downsampled(metric, object_id.generation_time)
+
             datapoint = {'_id' : object_id, 'm' : metric.id, 'v' : value}
 
         datapoint['_id'] = collection.insert(datapoint, safe=True)
 
-        if timestamp is None:
+        if timestamp is None and self._time_offset == ZERO_TIMEDELTA:
             # When timestamp is not specified, database generates one, so we check it here
             try:
                 self._timestamp_after_downsampled(metric, datapoint['_id'].generation_time)
@@ -815,7 +815,8 @@ class Backend(object):
         cannot be added to it anymore.
 
         :param query_tags: Tags that should be matched to metrics
-        :param until: Downsample until which datapoints, inclusive (optional, otherwise all until the current time)
+        :param until: Timestamp until which to downsample, not including datapoints
+                      at a timestamp (optional, otherwise all until the current time)
         """
 
         if until is None:
@@ -839,8 +840,6 @@ class Backend(object):
             # TODO: Why "can't compare offset-naive and offset-aware datetimes" is sometimes thrown here?
             if state is None or state.timestamp is None or rounded_timestamp > state.timestamp:
                 self._downsample(metric, granularity, rounded_timestamp)
-            elif rounded_timestamp < state.timestamp:
-                raise exceptions.InvalidTimestamp("Metric '%s' at granularity '%s' has already been downsampled" % (metric.external_id, granularity))
 
     def _generate_object_id(self, timestamp=None):
         """
@@ -888,20 +887,20 @@ class Backend(object):
         oid += metric_id
         return objectid.ObjectId(oid)
 
-    def _downsample(self, metric, granularity, last_timestamp):
+    def _downsample(self, metric, granularity, until_timestamp):
         """
         Performs downsampling on the given metric and granularity.
 
         :param metric: Metric instance
         :param granularity: Lower granularity to downsample into
-        :param last_timestamp: Timestamp of the last datapoint to downsample, rounded
-                               to specified granularity
+        :param until_timestamp: Timestamp until which to downsample, not including datapoints
+                                at a timestamp, rounded to the specified granularity
         """
 
-        assert granularity.round_timestamp(last_timestamp) == last_timestamp
-        assert metric.downsample_state.get(granularity.name, None) is None or metric.downsample_state.get(granularity.name, None).timestamp is None or last_timestamp > metric.downsample_state.get(granularity.name, None).timestamp
+        assert granularity.round_timestamp(until_timestamp) == until_timestamp
+        assert metric.downsample_state.get(granularity.name, None) is None or metric.downsample_state.get(granularity.name).timestamp is None or until_timestamp > metric.downsample_state.get(granularity.name).timestamp
 
-        self._supported_timestamp_range(last_timestamp)
+        self._supported_timestamp_range(until_timestamp)
 
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
 
@@ -915,7 +914,7 @@ class Backend(object):
                     '$gte': objectid.ObjectId.from_datetime(state.timestamp),
                     # It is really important that current_timestamp is correctly rounded for given granularity,
                     # because we want that only none or all datapoints for granularity periods are selected
-                    '$lt': objectid.ObjectId.from_datetime(last_timestamp),
+                    '$lt': objectid.ObjectId.from_datetime(until_timestamp),
                 },
 
             })
@@ -929,7 +928,7 @@ class Backend(object):
                 '_id': {
                     # It is really important that current_timestamp is correctly rounded for given granularity,
                     # because we want that only none or all datapoints for granularity periods are selected
-                    '$lt': objectid.ObjectId.from_datetime(last_timestamp),
+                    '$lt': objectid.ObjectId.from_datetime(until_timestamp),
                 },
             })
 
@@ -980,6 +979,7 @@ class Backend(object):
             ts = datapoint['_id'].generation_time
             new_granularity_period_timestamp = granularity.round_timestamp(ts)
             if current_granularity_period_timestamp is None:
+                # TODO: Use generator here, not concatenation
                 for x in value_downsamplers + time_downsamplers:
                     x.initialize()
             elif current_granularity_period_timestamp != new_granularity_period_timestamp:
@@ -1001,8 +1001,8 @@ class Backend(object):
         if current_granularity_period_timestamp is not None:
             store_downsampled_datapoint(current_granularity_period_timestamp)
 
-            # At the end, update the timestamp of the last processed granularity period in downsample_state
-            state.timestamp = current_granularity_period_timestamp
+            # At the end, update the timestamp until which we have processed everything
+            state.timestamp = until_timestamp
             metric.save()
 
         # And call callback for all new datapoints

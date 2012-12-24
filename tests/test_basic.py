@@ -1,5 +1,7 @@
 import datetime, time, unittest
 
+import pytz
+
 import mongoengine
 
 import datastream
@@ -153,12 +155,125 @@ class BasicTest(MongoDBBasicTest):
         with self.assertRaises(exceptions.InvalidTimestamp):
             self.datastream.append(metric_id, 1, datetime.datetime.max)
 
-    def test_monotonicity(self):
+    def test_monotonicity_multiple(self):
+        metric_id = self.datastream.ensure_metric([{'name': 'fooclub'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+
+        self.datastream.append(metric_id, 1, ts)
+        self.datastream.append(metric_id, 2, ts)
+        self.datastream.append(metric_id, 3, ts)
+        self.datastream.append(metric_id, 4, ts)
+        self.datastream.append(metric_id, 5, ts)
+
+        self.datastream.downsample_metrics(until=ts + datetime.timedelta(hours=10))
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start=ts)
+        self.assertEqual(len(data), 5)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start=ts, end=ts)
+        self.assertEqual(len(data), 5)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start_exclusive=ts)
+        self.assertEqual(len(data), 0)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start_exclusive=ts, end=ts)
+        self.assertEqual(len(data), 0)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start_exclusive=ts, end_exclusive=ts)
+        self.assertEqual(len(data), 0)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start=ts, end_exclusive=ts)
+        self.assertEqual(len(data), 0)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds10, start=ts)
+        self.assertEqual(len(data), 1)
+
+        self.assertEqual(data[0]['t']['a'], ts) # first
+        self.assertEqual(data[0]['t']['z'], ts) # last
+        self.assertEqual(data[0]['t']['m'], ts) # mean
+        self.assertEqual(data[0]['t']['a'], ts) # median
+        self.assertEqual(data[0]['v']['c'], 5) # count
+        self.assertEqual(data[0]['v']['d'], 2.5) # standard deviation
+        self.assertEqual(data[0]['v']['m'], 3.0) # mean
+        self.assertEqual(data[0]['v']['l'], 1) # minimum
+        self.assertEqual(data[0]['v']['q'], 55) # sum of squares
+        self.assertEqual(data[0]['v']['s'], 15) # sum
+        self.assertEqual(data[0]['v']['u'], 5) # maximum
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds10, start=ts)
+        self.assertEqual(len(data), 1)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Minutes, start=ts)
+        self.assertEqual(len(data), 1)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Minutes10, start=ts)
+        self.assertEqual(len(data), 1)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Hours, start=ts)
+        self.assertEqual(len(data), 1)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Hours6, start=ts)
+        self.assertEqual(len(data), 1)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Days, start=ts)
+        self.assertEqual(len(data), 0)
+
+    def test_monotonicity_timestamp(self):
         metric_id = self.datastream.ensure_metric([{'name': 'fooclub'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
         self.datastream.append(metric_id, 1, datetime.datetime(2000, 1, 1, 12, 0, 0))
         self.datastream.append(metric_id, 1, datetime.datetime(2000, 1, 3, 12, 0, 0))
         with self.assertRaises(exceptions.InvalidTimestamp):
             self.datastream.append(metric_id, 1, datetime.datetime(2000, 1, 2, 12, 0, 0))
+        self.datastream.append(metric_id, 1, datetime.datetime(2000, 1, 2, 12, 0, 0), False)
+
+    def test_monotonicity_realtime(self):
+        metric_id = self.datastream.ensure_metric([{'name': 'fooclub'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        self.datastream.append(metric_id, 1)
+
+        # Artificially increase backend time for a minute
+        self.datastream.backend._time_offset += datetime.timedelta(minutes=1)
+
+        self.datastream.append(metric_id, 1)
+
+        # Artificially decrease backend time for 30 seconds (cannot be 1 minute because this disabled testing code-path)
+        self.datastream.backend._time_offset -= datetime.timedelta(seconds=30)
+
+        with self.assertRaises(exceptions.InvalidTimestamp):
+            self.datastream.append(metric_id, 1)
+
+        self.datastream.append(metric_id, 1, check_timestamp=False)
+
+    def test_downsample_freeze(self):
+        metric_id = self.datastream.ensure_metric([{'name': 'fooclub'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+
+        self.datastream.append(metric_id, 1, datetime.datetime(2000, 1, 1, 12, 0, 0))
+        self.datastream.append(metric_id, 1, datetime.datetime(2000, 1, 3, 12, 0, 0))
+
+        self.datastream.downsample_metrics(until=datetime.datetime(2000, 1, 3, 12, 0, 10))
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds10, start=datetime.datetime.min)
+        self.assertEqual(len(data), 2)
+
+        with self.assertRaises(exceptions.InvalidTimestamp):
+            self.datastream.append(metric_id, 1, datetime.datetime(2000, 1, 3, 12, 0, 0))
+        with self.assertRaises(exceptions.InvalidTimestamp):
+            self.datastream.append(metric_id, 1, datetime.datetime(2000, 1, 3, 12, 0, 5))
+
+        self.datastream.append(metric_id, 1, datetime.datetime(2000, 1, 3, 12, 0, 10))
+        self.datastream.append(metric_id, 1, datetime.datetime(2000, 1, 4, 12, 0, 0))
+
+        self.datastream.downsample_metrics(until=datetime.datetime(2000, 1, 10, 12, 0, 0))
+
+        with self.assertRaises(exceptions.InvalidTimestamp):
+            self.datastream.append(metric_id, 1, datetime.datetime(2000, 1, 4, 12, 0, 0))
+        with self.assertRaises(exceptions.InvalidTimestamp):
+            self.datastream.append(metric_id, 1, datetime.datetime(2000, 1, 5, 12, 0, 0))
+        with self.assertRaises(exceptions.InvalidTimestamp):
+            self.datastream.append(metric_id, 1, datetime.datetime(2000, 1, 9, 12, 0, 0))
+
+        self.datastream.append(metric_id, 1, datetime.datetime(2000, 1, 10, 12, 0, 0))
+        self.datastream.append(metric_id, 1, datetime.datetime(2000, 1, 10, 12, 0, 1))
 
     def test_granularities(self):
         query_tags = [
@@ -252,6 +367,137 @@ class BasicTest(MongoDBBasicTest):
         data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds10, start_exclusive=s, end_exclusive=e)
         self.assertEqual(len(data), 5)
 
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds10, start=datetime.datetime.min, end=datetime.datetime.max)
+        self.assertEqual(len(data), 120)
+
+        # MINUTES
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Minutes, start=s, end=e)
+        self.assertEqual(len(data), 2)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Minutes, start_exclusive=s, end=e)
+        self.assertEqual(len(data), 1)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Minutes, start=s, end_exclusive=e)
+        self.assertEqual(len(data), 1)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Minutes, start_exclusive=s, end_exclusive=e)
+        self.assertEqual(len(data), 0)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Minutes, start=datetime.datetime.min, end=datetime.datetime.max)
+        self.assertEqual(len(data), 20)
+
+        # 10 MINUTES
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Minutes10, start=datetime.datetime.min)
+        self.assertEqual(len(data), 2)
+
+        # HOURS
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Hours, start=datetime.datetime.min)
+        self.assertEqual(len(data), 0)
+
+        # 6 HOURS
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Hours6, start=datetime.datetime.min)
+        self.assertEqual(len(data), 0)
+
+        # DAYS
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Days, start=datetime.datetime.min)
+        self.assertEqual(len(data), 0)
+
+    def test_granularities_multiple(self):
+        query_tags = [
+            {'name': 'foodata'},
+        ]
+        tags = []
+
+        metric_id = self.datastream.ensure_metric(query_tags, tags, self.value_downsamplers, datastream.Granularity.Seconds)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0)
+        for i in range(1200):
+            for j in range(3):
+                self.datastream.append(metric_id, j * i, ts)
+            ts += datetime.timedelta(seconds=1)
+
+        self.datastream.downsample_metrics(until=ts)
+
+        s = datetime.datetime(2000, 1, 1, 12, 0, 0)
+        e = datetime.datetime(2000, 1, 1, 12, 1, 0)
+
+        # SECONDS
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start=s, end=e)
+        self.assertEqual(len(data), 3 * 61)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start_exclusive=s, end=e)
+        self.assertEqual(len(data), 3 * 60)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start=s, end_exclusive=e)
+        self.assertEqual(len(data), 3 * 60)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start_exclusive=s, end_exclusive=e)
+        self.assertEqual(len(data), 3 * 59)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start=s)
+        self.assertEqual(len(data), 3 * 1200)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start_exclusive=s)
+        self.assertEqual(len(data), 3 * 1199)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start=s, end=datetime.datetime.max)
+        self.assertEqual(len(data), 3 * 1200)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start_exclusive=s, end=datetime.datetime.max)
+        self.assertEqual(len(data), 3 * 1199)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start=s, end_exclusive=datetime.datetime.max)
+        self.assertEqual(len(data), 3 * 1200)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start_exclusive=s, end_exclusive=datetime.datetime.max)
+        self.assertEqual(len(data), 3 * 1199)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end=e)
+        self.assertEqual(len(data), 3 * 61)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end=e)
+        self.assertEqual(len(data), 3 * 61)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end_exclusive=e)
+        self.assertEqual(len(data), 3 * 60)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end_exclusive=e)
+        self.assertEqual(len(data), 3 * 60)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min)
+        self.assertEqual(len(data), 3 * 1200)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min)
+        self.assertEqual(len(data), 3 * 1200)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end=datetime.datetime.max)
+        self.assertEqual(len(data), 3 * 1200)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end=datetime.datetime.max)
+        self.assertEqual(len(data), 3 * 1200)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end_exclusive=datetime.datetime.max)
+        self.assertEqual(len(data), 3 * 1200)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end_exclusive=datetime.datetime.max)
+        self.assertEqual(len(data), 3 * 1200)
+
+        #10 SECONDS
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds10, start=s, end=e)
+        self.assertEqual(len(data), 7)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds10, start_exclusive=s, end=e)
+        self.assertEqual(len(data), 6)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds10, start=s, end_exclusive=e)
+        self.assertEqual(len(data), 6)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds10, start_exclusive=s, end_exclusive=e)
+        self.assertEqual(len(data), 5)
+
+        data = self.datastream.get_data(metric_id, self.datastream.Granularity.Seconds10, start=datetime.datetime.min, end=datetime.datetime.max)
+        self.assertEqual(len(data), 120)
+
         # MINUTES
         data = self.datastream.get_data(metric_id, self.datastream.Granularity.Minutes, start=s, end=e)
         self.assertEqual(len(data), 2)
@@ -297,16 +543,20 @@ class StressTest(MongoDBBasicTest):
         # 1 year, append each second, downsample after each hour
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0)
         start_time = time.time()
-        for i in range(1, 31536000):
+        for i in range(1, 356 * 24 * 60 * 60):
             self.datastream.append(metric_id, i, ts)
-            ts += datetime.timedelta(0, 1)
+            ts += datetime.timedelta(seconds=1)
 
-            if not i % 3600:
+            if i % 3600 == 0:
                 t1 = time.time()
-                self.datastream.downsample_metrics()
+                self.datastream.downsample_metrics(until=ts)
                 t2 = time.time()
-                print "%08d insert: %d:%02d    downsample: %d:%02d" % \
-                      (i, (t1 - start_time) / 60, (t1 - start_time) % 60,
-                       (t2 - t1) / 60, (t2 - t1) % 60)
+                print "%08d insert: %d:%02d    downsample: %d:%02d" % (
+                    i,
+                    (t1 - start_time) / 60,
+                    (t1 - start_time) % 60,
+                    (t2 - t1) / 60,
+                    (t2 - t1) % 60,
+                )
 
                 start_time = t2
