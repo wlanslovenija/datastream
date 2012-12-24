@@ -284,6 +284,7 @@ class DownsampleState(mongoengine.EmbeddedDocument):
 
 class Metric(mongoengine.Document):
     id = mongoengine.SequenceField(primary_key=True, db_alias=DATABASE_ALIAS)
+    # TODO: Use binary UUID format
     external_id = mongoengine.UUIDField()
     value_downsamplers = mongoengine.ListField(mongoengine.StringField(
         choices=[downsampler.name for downsampler in ValueDownsamplers.values],
@@ -304,7 +305,13 @@ class Backend(object):
     time_downsamplers = set([downsampler.name for downsampler in TimeDownsamplers.values])
 
     # We are storing timestamp into an ObjectID where timestamp is a 32-bit signed value
-    _min_timestamp = datetime.datetime.fromtimestamp(-2*31, tz=pytz.utc)
+    # In fact timestamp is a signed value so we could support also timestamps before the epoch,
+    # but queries get a bit more complicated because less and greater operators do not see
+    # ObjectIDs as signed values, so we should construct a more complicated query for datapoints
+    # before the epoch and after the epoch
+    # TODO: Support datapoints with timestamp before the epoch
+    #_min_timestamp = datetime.datetime.fromtimestamp(-2**31, tz=pytz.utc)
+    _min_timestamp = datetime.datetime.fromtimestamp(0, tz=pytz.utc)
     _max_timestamp = datetime.datetime.fromtimestamp(2**31-1, tz=pytz.utc)
 
     def __init__(self, database_name, **connection_settings):
@@ -314,6 +321,8 @@ class Backend(object):
         :param database_name: MongoDB database name
         :param connection_settings: Extra connection settings as defined for `mongoengine.register_connection`
         """
+
+        connection_settings.setdefault('tz_aware', True)
 
         # Setup the database connection to MongoDB
         mongoengine.connect(database_name, DATABASE_ALIAS, **connection_settings)
@@ -556,6 +565,9 @@ class Backend(object):
 
         raise exceptions.InvalidTimestamp("Timestamp is out of range: %s" % timestamp)
 
+    def _force_timestamp_range(self, timestamp):
+        return max(self._min_timestamp, min(self._max_timestamp, timestamp))
+
     def _timestamp_after_downsampled(self, metric, timestamp):
         """
         We require that once a period has been downsampled, no new datapoint can be added there.
@@ -698,17 +710,25 @@ class Backend(object):
 
             # We add one second and use non-strict greater-than to skip all
             # possible ObjectId values in a given "start" timestamp
-            start_timestamp = granularity.round_timestamp(start_exclusive) + ONE_SECOND_TIMEDELTA
+            try:
+                start_timestamp = granularity.round_timestamp(start_exclusive) + ONE_SECOND_TIMEDELTA
+            except OverflowError:
+                return []
         else:
             start_timestamp = granularity.round_timestamp(start)
 
-        self._supported_timestamp_range(start_timestamp)
+        if start_timestamp > self._max_timestamp:
+            return []
+
+        start_timestamp = self._force_timestamp_range(start_timestamp)
 
         time_query = {
             '$gte': objectid.ObjectId.from_datetime(start_timestamp),
         }
 
         if end is not None or end_exclusive is not None:
+            overflow = False
+
             # No need to round the end time as the last granularity is
             # automatically included
             if end_exclusive is not None:
@@ -719,20 +739,32 @@ class Backend(object):
             else:
                 # We add one second and use strict less-than to cover all
                 # possible ObjectId values in a given "end" timestamp
-                end_timestamp = end + ONE_SECOND_TIMEDELTA
+                try:
+                    end_timestamp = end + ONE_SECOND_TIMEDELTA
+                except OverflowError:
+                    overflow = True
 
-            self._supported_timestamp_range(end_timestamp)
+            if not overflow:
+                if end_timestamp <= self._min_timestamp:
+                    return []
 
-            time_query.update({
-                '$lt': objectid.ObjectId.from_datetime(end_timestamp),
-            })
+                end_timestamp = self._force_timestamp_range(end_timestamp)
 
-        pts = collection.find({
+                # Optimization
+                if end_timestamp <= start_timestamp:
+                    return []
+
+                time_query.update({
+                    '$lt': objectid.ObjectId.from_datetime(end_timestamp),
+                })
+
+        datapoints = collection.find({
             'm': metric.id,
             '_id': time_query,
+            # TODO: Do we really need datapoints sorted in this order? Do we have index for this order?
         }, downsamplers).sort('_id')
 
-        return [self._format_datapoint(x) for x in pts]
+        return [self._format_datapoint(datapoint) for datapoint in datapoints]
 
     def delete_metrics(self, query_tags=None):
         """
@@ -779,7 +811,8 @@ class Backend(object):
     def downsample_metrics(self, query_tags=None, until=None):
         """
         Requests the backend to downsample all metrics matching the specified
-        query tags.
+        query tags. Once a time range has been downsampled, new datapoints
+        cannot be added to it anymore.
 
         :param query_tags: Tags that should be matched to metrics
         :param until: Downsample until which datapoints, inclusive (optional, otherwise all until the current time)
@@ -803,6 +836,7 @@ class Backend(object):
         for granularity in api.Granularity.values[api.Granularity.values.index(metric.highest_granularity) + 1:]:
             state = metric.downsample_state.get(granularity.name, None)
             rounded_timestamp = granularity.round_timestamp(until_timestamp)
+            # TODO: Why "can't compare offset-naive and offset-aware datetimes" is sometimes thrown here?
             if state is None or state.timestamp is None or rounded_timestamp > state.timestamp:
                 self._downsample(metric, granularity, rounded_timestamp)
             elif rounded_timestamp < state.timestamp:
@@ -941,6 +975,7 @@ class Backend(object):
 
         downsampled_points = getattr(db.datapoints, granularity.name)
         current_granularity_period_timestamp = None
+        # TODO: Do we really need datapoints sorted in this order? Do we have index for this order?
         for datapoint in datapoints.sort('_id'):
             ts = datapoint['_id'].generation_time
             new_granularity_period_timestamp = granularity.round_timestamp(ts)

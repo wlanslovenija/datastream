@@ -354,15 +354,20 @@ class Datastream(object):
 
         return self.backend.get_data(metric_id, granularity, start, end, start_exclusive, end_exclusive, value_downsamplers, time_downsamplers)
 
-    def downsample_metrics(self, query_tags=None):
+    def downsample_metrics(self, query_tags=None, until=None):
         """
         Requests the backend to downsample all metrics matching the specified
-        query tags.
+        query tags. Once a time range has been downsampled, new datapoints
+        cannot be added to it anymore.
 
         :param query_tags: Tags that should be matched to metrics
+        :param until: Downsample until which datapoints, inclusive (optional, otherwise all until the current time)
         """
 
-        return self.backend.downsample_metrics(query_tags)
+        if until is not None and until.tzinfo is None:
+            until = until.replace(tzinfo=pytz.utc)
+
+        return self.backend.downsample_metrics(query_tags, until)
 
     def delete_metrics(self, query_tags=None):
         """
