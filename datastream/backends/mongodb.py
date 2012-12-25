@@ -820,6 +820,7 @@ class Backend(object):
         """
 
         if until is None:
+            # TODO: Hm, this is not completely correct, because client time could be different than server time, we should allow use where client does not have to specify any timestamp and everything is done on the server
             until = datetime.datetime.now(pytz.utc) + self._time_offset
 
         for metric in self._get_metric_queryset(query_tags):
