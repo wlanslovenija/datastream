@@ -657,7 +657,7 @@ class Backend(object):
         :param end_exclusive: Time range end, excluding the end (optional)
         :param value_downsamplers: The list of downsamplers to limit datapoint values to (optional)
         :param time_downsamplers: The list of downsamplers to limit timestamp values to (optional)
-        :return: A list of datapoints
+        :return: An iterator over datapoints from newest to oldest
         """
 
         try:
@@ -761,8 +761,7 @@ class Backend(object):
         datapoints = collection.find({
             'm': stream.id,
             '_id': time_query,
-            # TODO: Do we really need datapoints sorted in this order? Do we have index for this order?
-        }, downsamplers).sort('_id')
+        }, downsamplers).sort('_id', -1)
 
         for datapoint in datapoints:
             yield self._format_datapoint(datapoint)

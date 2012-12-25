@@ -318,8 +318,10 @@ class Datastream(object):
         :param end_exclusive: Time range end, excluding the end (optional)
         :param value_downsamplers: The list of downsamplers to limit datapoint values to (optional)
         :param time_downsamplers: The list of downsamplers to limit timestamp values to (optional)
-        :return: A list of datapoints
+        :return: An iterator over datapoints from newest to oldest
         """
+
+        # TODO: Do we want to allow user to specify order of datapoints returned?
 
         if start is None == start_exclusive is None:
             raise AttributeError("One and only one time range start must be specified.")
