@@ -713,12 +713,12 @@ class Backend(object):
             try:
                 start_timestamp = granularity.round_timestamp(start_exclusive) + ONE_SECOND_TIMEDELTA
             except OverflowError:
-                return []
+                return
         else:
             start_timestamp = granularity.round_timestamp(start)
 
         if start_timestamp > self._max_timestamp:
-            return []
+            return
 
         start_timestamp = self._force_timestamp_range(start_timestamp)
 
@@ -746,13 +746,13 @@ class Backend(object):
 
             if not overflow:
                 if end_timestamp <= self._min_timestamp:
-                    return []
+                    return
 
                 end_timestamp = self._force_timestamp_range(end_timestamp)
 
                 # Optimization
                 if end_timestamp <= start_timestamp:
-                    return []
+                    return
 
                 time_query.update({
                     '$lt': objectid.ObjectId.from_datetime(end_timestamp),
@@ -764,7 +764,8 @@ class Backend(object):
             # TODO: Do we really need datapoints sorted in this order? Do we have index for this order?
         }, downsamplers).sort('_id')
 
-        return [self._format_datapoint(datapoint) for datapoint in datapoints]
+        for datapoint in datapoints:
+            yield self._format_datapoint(datapoint)
 
     def delete_streams(self, query_tags=None):
         """

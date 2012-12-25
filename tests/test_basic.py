@@ -65,10 +65,10 @@ class BasicTest(MongoDBBasicTest):
         # Should not do anything
         self.datastream.downsample_streams()
 
-        data = self.datastream.get_data(stream_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
+        data = list(self.datastream.get_data(stream_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time())))
         self.assertItemsEqual(data, [])
 
-        data = self.datastream.get_data(stream_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
+        data = list(self.datastream.get_data(stream_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time())))
         self.assertItemsEqual(data, [])
 
         # Callback should not have been fired
@@ -77,10 +77,10 @@ class BasicTest(MongoDBBasicTest):
         self.datastream.append(stream_id, 42)
         self.assertRaises(datastream.exceptions.InvalidTimestamp, lambda: self.datastream.append(stream_id, 42, datetime.datetime.min))
 
-        data = self.datastream.get_data(stream_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), end_exclusive=datetime.datetime.utcfromtimestamp(time.time()))
+        data = list(self.datastream.get_data(stream_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), end_exclusive=datetime.datetime.utcfromtimestamp(time.time())))
         self.assertEqual(len(data), 0)
 
-        data = self.datastream.get_data(stream_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
+        data = list(self.datastream.get_data(stream_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time())))
         self.assertEqual(len(data), 1)
 
         self.assertEqual(len(self._callback_points), 1)
@@ -89,7 +89,7 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(cb_granularity, datastream.Granularity.Seconds)
         self.assertItemsEqual(cb_datapoint, data[0])
 
-        data = self.datastream.get_data(stream_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0))
+        data = list(self.datastream.get_data(stream_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0)))
         self.assertItemsEqual(data, [])
 
         # Artificially increase backend time for a minute so that downsample will do something for minute granularity
@@ -97,16 +97,16 @@ class BasicTest(MongoDBBasicTest):
 
         self.datastream.downsample_streams()
 
-        data = self.datastream.get_data(
+        data = list(self.datastream.get_data(
             stream_id,
             datastream.Granularity.Seconds,
             datetime.datetime.utcfromtimestamp(0),
             datetime.datetime.utcfromtimestamp(time.time()) + self.datastream.backend._time_offset,
-        )
+        ))
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]['v'], 42)
 
-        data = self.datastream.get_data(stream_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0))
+        data = list(self.datastream.get_data(stream_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0)))
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]['v'], 42)
 
@@ -122,24 +122,24 @@ class BasicTest(MongoDBBasicTest):
         value_downsamplers_keys = [datastream.VALUE_DOWNSAMPLERS[d] for d in self.value_downsamplers]
         time_downsamplers_keys = [datastream.TIME_DOWNSAMPLERS[d] for d in self.time_downsamplers]
 
-        data = self.datastream.get_data(
+        data = list(self.datastream.get_data(
             stream_id,
             datastream.Granularity.Minutes,
             datetime.datetime.utcfromtimestamp(0),
             datetime.datetime.utcfromtimestamp(time.time()) + self.datastream.backend._time_offset,
-        )
+        ))
         self.assertEqual(len(data), 1)
         self.assertItemsEqual(data[0]['v'].keys(), value_downsamplers_keys)
         self.assertItemsEqual(data[0]['t'].keys(), time_downsamplers_keys)
         self.assertItemsEqual(data[0], cb_datapoint)
 
-        data = self.datastream.get_data(stream_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0))
+        data = list(self.datastream.get_data(stream_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0)))
         self.assertEqual(len(data), 1)
         self.assertItemsEqual(data[0]['v'].keys(), value_downsamplers_keys)
         self.assertItemsEqual(data[0]['t'].keys(), time_downsamplers_keys)
         self.assertTrue(datastream.VALUE_DOWNSAMPLERS['count'] in data[0]['v'].keys())
 
-        data = self.datastream.get_data(stream_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0), value_downsamplers=('count',))
+        data = list(self.datastream.get_data(stream_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0), value_downsamplers=('count',)))
         self.assertEqual(len(data), 1)
         self.assertItemsEqual(data[0]['v'].keys(), (datastream.VALUE_DOWNSAMPLERS['count'],))
         self.assertEqual(data[0]['v'][datastream.VALUE_DOWNSAMPLERS['count']], 1)
@@ -168,25 +168,25 @@ class BasicTest(MongoDBBasicTest):
 
         self.datastream.downsample_streams(until=ts + datetime.timedelta(hours=10))
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts))
         self.assertEqual(len(data), 5)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts, end=ts)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts, end=ts))
         self.assertEqual(len(data), 5)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=ts)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=ts))
         self.assertEqual(len(data), 0)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=ts, end=ts)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=ts, end=ts))
         self.assertEqual(len(data), 0)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=ts, end_exclusive=ts)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=ts, end_exclusive=ts))
         self.assertEqual(len(data), 0)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts, end_exclusive=ts)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts, end_exclusive=ts))
         self.assertEqual(len(data), 0)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts))
         self.assertEqual(len(data), 1)
 
         self.assertEqual(data[0]['t']['a'], ts) # first
@@ -201,22 +201,22 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(data[0]['v']['s'], 15) # sum
         self.assertEqual(data[0]['v']['u'], 5) # maximum
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts))
         self.assertEqual(len(data), 1)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=ts)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=ts))
         self.assertEqual(len(data), 1)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes10, start=ts)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes10, start=ts))
         self.assertEqual(len(data), 1)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Hours, start=ts)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Hours, start=ts))
         self.assertEqual(len(data), 1)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Hours6, start=ts)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Hours6, start=ts))
         self.assertEqual(len(data), 1)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Days, start=ts)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Days, start=ts))
         self.assertEqual(len(data), 0)
 
     def test_monotonicity_timestamp(self):
@@ -252,7 +252,7 @@ class BasicTest(MongoDBBasicTest):
 
         self.datastream.downsample_streams(until=datetime.datetime(2000, 1, 3, 12, 0, 10))
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=datetime.datetime.min)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=datetime.datetime.min))
         self.assertEqual(len(data), 2)
 
         with self.assertRaises(exceptions.InvalidTimestamp):
@@ -294,112 +294,112 @@ class BasicTest(MongoDBBasicTest):
         e = datetime.datetime(2000, 1, 1, 12, 1, 0)
 
         # SECONDS
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end=e))
         self.assertEqual(len(data), 61)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end=e))
         self.assertEqual(len(data), 60)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end_exclusive=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end_exclusive=e))
         self.assertEqual(len(data), 60)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end_exclusive=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end_exclusive=e))
         self.assertEqual(len(data), 59)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s))
         self.assertEqual(len(data), 1200)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s))
         self.assertEqual(len(data), 1199)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end=datetime.datetime.max))
         self.assertEqual(len(data), 1200)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end=datetime.datetime.max))
         self.assertEqual(len(data), 1199)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end_exclusive=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end_exclusive=datetime.datetime.max))
         self.assertEqual(len(data), 1200)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end_exclusive=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end_exclusive=datetime.datetime.max))
         self.assertEqual(len(data), 1199)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end=e))
         self.assertEqual(len(data), 61)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end=e))
         self.assertEqual(len(data), 61)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end_exclusive=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end_exclusive=e))
         self.assertEqual(len(data), 60)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end_exclusive=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end_exclusive=e))
         self.assertEqual(len(data), 60)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min))
         self.assertEqual(len(data), 1200)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min))
         self.assertEqual(len(data), 1200)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end=datetime.datetime.max))
         self.assertEqual(len(data), 1200)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end=datetime.datetime.max))
         self.assertEqual(len(data), 1200)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end_exclusive=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end_exclusive=datetime.datetime.max))
         self.assertEqual(len(data), 1200)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end_exclusive=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end_exclusive=datetime.datetime.max))
         self.assertEqual(len(data), 1200)
 
         #10 SECONDS
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=s, end=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=s, end=e))
         self.assertEqual(len(data), 7)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start_exclusive=s, end=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start_exclusive=s, end=e))
         self.assertEqual(len(data), 6)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=s, end_exclusive=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=s, end_exclusive=e))
         self.assertEqual(len(data), 6)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start_exclusive=s, end_exclusive=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start_exclusive=s, end_exclusive=e))
         self.assertEqual(len(data), 5)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=datetime.datetime.min, end=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=datetime.datetime.min, end=datetime.datetime.max))
         self.assertEqual(len(data), 120)
 
         # MINUTES
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=s, end=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=s, end=e))
         self.assertEqual(len(data), 2)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start_exclusive=s, end=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start_exclusive=s, end=e))
         self.assertEqual(len(data), 1)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=s, end_exclusive=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=s, end_exclusive=e))
         self.assertEqual(len(data), 1)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start_exclusive=s, end_exclusive=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start_exclusive=s, end_exclusive=e))
         self.assertEqual(len(data), 0)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=datetime.datetime.min, end=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=datetime.datetime.min, end=datetime.datetime.max))
         self.assertEqual(len(data), 20)
 
         # 10 MINUTES
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes10, start=datetime.datetime.min)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes10, start=datetime.datetime.min))
         self.assertEqual(len(data), 2)
 
         # HOURS
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Hours, start=datetime.datetime.min)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Hours, start=datetime.datetime.min))
         self.assertEqual(len(data), 0)
 
         # 6 HOURS
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Hours6, start=datetime.datetime.min)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Hours6, start=datetime.datetime.min))
         self.assertEqual(len(data), 0)
 
         # DAYS
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Days, start=datetime.datetime.min)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Days, start=datetime.datetime.min))
         self.assertEqual(len(data), 0)
 
     def test_granularities_multiple(self):
@@ -422,112 +422,112 @@ class BasicTest(MongoDBBasicTest):
         e = datetime.datetime(2000, 1, 1, 12, 1, 0)
 
         # SECONDS
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end=e))
         self.assertEqual(len(data), 3 * 61)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end=e))
         self.assertEqual(len(data), 3 * 60)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end_exclusive=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end_exclusive=e))
         self.assertEqual(len(data), 3 * 60)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end_exclusive=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end_exclusive=e))
         self.assertEqual(len(data), 3 * 59)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s))
         self.assertEqual(len(data), 3 * 1200)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s))
         self.assertEqual(len(data), 3 * 1199)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end=datetime.datetime.max))
         self.assertEqual(len(data), 3 * 1200)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end=datetime.datetime.max))
         self.assertEqual(len(data), 3 * 1199)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end_exclusive=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end_exclusive=datetime.datetime.max))
         self.assertEqual(len(data), 3 * 1200)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end_exclusive=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end_exclusive=datetime.datetime.max))
         self.assertEqual(len(data), 3 * 1199)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end=e))
         self.assertEqual(len(data), 3 * 61)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end=e))
         self.assertEqual(len(data), 3 * 61)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end_exclusive=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end_exclusive=e))
         self.assertEqual(len(data), 3 * 60)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end_exclusive=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end_exclusive=e))
         self.assertEqual(len(data), 3 * 60)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min))
         self.assertEqual(len(data), 3 * 1200)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min))
         self.assertEqual(len(data), 3 * 1200)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end=datetime.datetime.max))
         self.assertEqual(len(data), 3 * 1200)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end=datetime.datetime.max))
         self.assertEqual(len(data), 3 * 1200)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end_exclusive=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end_exclusive=datetime.datetime.max))
         self.assertEqual(len(data), 3 * 1200)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end_exclusive=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end_exclusive=datetime.datetime.max))
         self.assertEqual(len(data), 3 * 1200)
 
         #10 SECONDS
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=s, end=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=s, end=e))
         self.assertEqual(len(data), 7)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start_exclusive=s, end=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start_exclusive=s, end=e))
         self.assertEqual(len(data), 6)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=s, end_exclusive=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=s, end_exclusive=e))
         self.assertEqual(len(data), 6)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start_exclusive=s, end_exclusive=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start_exclusive=s, end_exclusive=e))
         self.assertEqual(len(data), 5)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=datetime.datetime.min, end=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=datetime.datetime.min, end=datetime.datetime.max))
         self.assertEqual(len(data), 120)
 
         # MINUTES
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=s, end=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=s, end=e))
         self.assertEqual(len(data), 2)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start_exclusive=s, end=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start_exclusive=s, end=e))
         self.assertEqual(len(data), 1)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=s, end_exclusive=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=s, end_exclusive=e))
         self.assertEqual(len(data), 1)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start_exclusive=s, end_exclusive=e)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start_exclusive=s, end_exclusive=e))
         self.assertEqual(len(data), 0)
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=datetime.datetime.min, end=datetime.datetime.max)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=datetime.datetime.min, end=datetime.datetime.max))
         self.assertEqual(len(data), 20)
 
         # 10 MINUTES
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes10, start=datetime.datetime.min)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes10, start=datetime.datetime.min))
         self.assertEqual(len(data), 2)
 
         # HOURS
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Hours, start=datetime.datetime.min)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Hours, start=datetime.datetime.min))
         self.assertEqual(len(data), 0)
 
         # 6 HOURS
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Hours6, start=datetime.datetime.min)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Hours6, start=datetime.datetime.min))
         self.assertEqual(len(data), 0)
 
         # DAYS
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Days, start=datetime.datetime.min)
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Days, start=datetime.datetime.min))
         self.assertEqual(len(data), 0)
 
 @unittest.skip("stress test")
