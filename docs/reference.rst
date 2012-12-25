@@ -13,13 +13,13 @@ time span queries. Supported backends are MongoDB and Tempo.
    :members:
 
 Tags are a set of arbitrary JSON-serializable values that can be assigned to
-each metric. Although tags can be complex values, simple values like strings or
+each stream. Although tags can be complex values, simple values like strings or
 dicts of strings are preferred.
 
 Backends
 --------
 
-Metrics are stored in the metrics collection, datapoints are stored in the
+Streams are stored in the streams collection, datapoints are stored in the
 datapoints.<granularity> collections, where <granularity> is seconds, minutes,
 hours, and days.
 
@@ -33,7 +33,7 @@ This backend supports all defined downsampling functions. There are two ways in 
 
 When performing downsampling, we have to differentiate between two timestamps:
 
-* Datapoint raw timestamp is the timestamp of the raw datapoint that has been inserted for a given metric. It always has second granularity.
+* Datapoint raw timestamp is the timestamp of the raw datapoint that has been inserted for a given stream. It always has second granularity.
 
 * Datapoint downsampled timestamp is generated from the raw timestamp by rounding it to the given granularity. For example if raw timestamp is 31-07-2012 12:23:52, then the downsampled timestamp for hour granularity would be 31-07-2012 12:00:00 and for month granularity would be 01-07-2012 00:00:00. TODO: I am not sure if this is the best. You are discarding information about time-spread of datapoints on higher granularity here. Like missing datapoints on higher granularity, having only one datapoint there, having datapoints not in in regular intervals and so on. I would take the average (or median?) of timestamps of datapoints in the interval.
 
@@ -123,9 +123,9 @@ Exceptions
 
 .. autoclass:: DatastreamException
 
-.. autoclass:: MetricNotFound
+.. autoclass:: StreamNotFound
 
-.. autoclass:: MultipleMetricsReturned
+.. autoclass:: MultipleStreamsReturned
 
 .. autoclass:: UnsupportedDownsampler
 
@@ -133,3 +133,4 @@ Exceptions
 
 .. autoclass:: ReservedTagNameError
 
+.. autoclass:: InvalidTimestamp

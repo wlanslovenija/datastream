@@ -120,12 +120,12 @@ assert len(set(granularity._order for granularity in Granularity.values)) == len
 
 assert Granularity.Seconds > Granularity.Seconds10 > Granularity.Minutes > Granularity.Minutes10 > Granularity.Hours > Granularity.Hours6 > Granularity.Days
 
-class Metric(object):
+class Stream(object):
     def __init__(self, all_tags):
         tags = []
         for tag in all_tags:
             try:
-                self.id = tag['metric_id']
+                self.id = tag['stream_id']
                 continue
             except (ValueError, KeyError, TypeError):
                 pass
@@ -153,7 +153,7 @@ class Metric(object):
         self.tags = tags
 
         if not hasattr(self, 'id'):
-            raise ValueError("Supplied tags are missing 'metric_id'.")
+            raise ValueError("Supplied tags are missing 'stream_id'.")
         if not hasattr(self, 'value_downsamplers'):
             raise ValueError("Supplied tags are missing 'value_downsamplers'.")
         if not hasattr(self, 'time_downsamplers'):
@@ -162,7 +162,7 @@ class Metric(object):
             raise ValueError("Supplied tags are missing 'highest_granularity'.")
 
 RESERVED_TAGS = (
-    'metric_id',
+    'stream_id',
     'value_downsamplers',
     'time_downsamplers',
     'highest_granularity',
@@ -198,7 +198,7 @@ TIME_DOWNSAMPLERS = {
 
 class Datastream(object):
     Granularity = Granularity
-    Metric = Metric
+    Stream = Stream
     RESERVED_TAGS = RESERVED_TAGS
     VALUE_DOWNSAMPLERS = VALUE_DOWNSAMPLERS
     TIME_DOWNSAMPLERS = TIME_DOWNSAMPLERS
@@ -215,17 +215,17 @@ class Datastream(object):
         self.backend = backend
         self.backend.set_callback(callback)
 
-    def ensure_metric(self, query_tags, tags, value_downsamplers, highest_granularity):
+    def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity):
         """
-        Ensures that a specified metric exists.
+        Ensures that a specified stream exists.
 
-        :param query_tags: Tags which uniquely identify a metric
+        :param query_tags: Tags which uniquely identify a stream
         :param tags: Tags that should be used (together with `query_tags`) to create a
-                     metric when it doesn't yet exist
-        :param value_downsamplers: A set of names of value downsampler functions for this metric
-        :param highest_granularity: Predicted highest granularity of the data the metric
+                     stream when it doesn't yet exist
+        :param value_downsamplers: A set of names of value downsampler functions for this stream
+        :param highest_granularity: Predicted highest granularity of the data the stream
                                     will store, may be used to optimize data storage
-        :return: A metric identifier
+        :return: A stream identifier
         """
 
         if highest_granularity not in Granularity.values:
@@ -235,65 +235,65 @@ class Datastream(object):
         if len(unsupported_downsamplers) > 0:
             raise exceptions.UnsupportedDownsampler("Unsupported value downsampler(s): %s" % unsupported_downsamplers)
 
-        return self.backend.ensure_metric(query_tags, tags, value_downsamplers, highest_granularity)
+        return self.backend.ensure_stream(query_tags, tags, value_downsamplers, highest_granularity)
 
-    def get_tags(self, metric_id):
+    def get_tags(self, stream_id):
         """
-        Returns the tags for the specified metric.
+        Returns the tags for the specified stream.
 
-        :param metric_id: Metric identifier
-        :return: A list of tags for the metric
+        :param stream_id: Stream identifier
+        :return: A list of tags for the stream
         """
 
-        return self.backend.get_tags(metric_id)
+        return self.backend.get_tags(stream_id)
 
-    def update_tags(self, metric_id, tags):
+    def update_tags(self, stream_id, tags):
         """
-        Updates metric tags with new tags, overriding existing ones.
+        Updates stream tags with new tags, overriding existing ones.
 
-        :param metric_id: Metric identifier
+        :param stream_id: Stream identifier
         :param tags: A list of new tags
         """
 
-        return self.backend.update_tags(metric_id, tags)
+        return self.backend.update_tags(stream_id, tags)
 
-    def remove_tag(self, metric_id, tag):
+    def remove_tag(self, stream_id, tag):
         """
-        Removes metric tag.
+        Removes stream tag.
 
-        :param metric_id: Metric identifier
+        :param stream_id: Stream identifier
         :param tag: Tag value to remove
         """
 
-        return self.backend.remove_tag(metric_id, tag)
+        return self.backend.remove_tag(stream_id, tag)
 
-    def clear_tags(self, metric_id):
+    def clear_tags(self, stream_id):
         """
-        Removes (clears) all non-readonly metric tags.
+        Removes (clears) all non-readonly stream tags.
 
         Care should be taken that some tags are set immediately afterwards which uniquely
-        identify a metric to be able to use query the metric, in for example, `ensure_metric`.
+        identify a stream to be able to use query the stream, in for example, `ensure_stream`.
 
-        :param metric_id: Metric identifier
+        :param stream_id: Stream identifier
         """
 
-        return self.backend.clear_tags(metric_id)
+        return self.backend.clear_tags(stream_id)
 
-    def find_metrics(self, query_tags=None):
+    def find_streams(self, query_tags=None):
         """
-        Finds all metrics matching the specified query tags.
+        Finds all streams matching the specified query tags.
 
-        :param query_tags: Tags that should be matched to metrics
-        :return: A list of matched metric descriptors
+        :param query_tags: Tags that should be matched to streams
+        :return: A list of matched stream descriptors
         """
 
-        return self.backend.find_metrics(query_tags)
+        return self.backend.find_streams(query_tags)
 
-    def append(self, metric_id, value, timestamp=None, check_timestamp=True):
+    def append(self, stream_id, value, timestamp=None, check_timestamp=True):
         """
         Appends a datapoint into the datastream.
 
-        :param metric_id: Metric identifier
+        :param stream_id: Stream identifier
         :param value: Datapoint value
         :param timestamp: Datapoint timestamp, must be equal or larger (newer) than the latest one, monotonically increasing (optional)
         :param check_timestamp: Check if timestamp is equal or larger (newer) than the latest one (default: true)
@@ -304,13 +304,13 @@ class Datastream(object):
 
         # TODO: Should we limit timestamp to max(timestamp, datetime.datetime.utcfromtimestamp(0)) and min(timestamp, datetime.datetime.utcfromtimestamp(2147483647))
 
-        return self.backend.append(metric_id, value, timestamp, check_timestamp)
+        return self.backend.append(stream_id, value, timestamp, check_timestamp)
 
-    def get_data(self, metric_id, granularity, start=None, end=None, start_exclusive=None, end_exclusive=None, value_downsamplers=None, time_downsamplers=None):
+    def get_data(self, stream_id, granularity, start=None, end=None, start_exclusive=None, end_exclusive=None, value_downsamplers=None, time_downsamplers=None):
         """
         Retrieves data from a certain time range and of a certain granularity.
 
-        :param metric_id: Metric identifier
+        :param stream_id: Stream identifier
         :param granularity: Wanted granularity
         :param start: Time range start, including the start
         :param end: Time range end, excluding the end (optional)
@@ -352,15 +352,15 @@ class Datastream(object):
             if len(unsupported_downsamplers) > 0:
                 raise exceptions.UnsupportedDownsampler("Unsupported time downsampler(s): %s" % unsupported_downsamplers)
 
-        return self.backend.get_data(metric_id, granularity, start, end, start_exclusive, end_exclusive, value_downsamplers, time_downsamplers)
+        return self.backend.get_data(stream_id, granularity, start, end, start_exclusive, end_exclusive, value_downsamplers, time_downsamplers)
 
-    def downsample_metrics(self, query_tags=None, until=None):
+    def downsample_streams(self, query_tags=None, until=None):
         """
-        Requests the backend to downsample all metrics matching the specified
+        Requests the backend to downsample all streams matching the specified
         query tags. Once a time range has been downsampled, new datapoints
         cannot be added to it anymore.
 
-        :param query_tags: Tags that should be matched to metrics
+        :param query_tags: Tags that should be matched to streams
         :param until: Timestamp until which to downsample, not including datapoints
                       at a timestamp (optional, otherwise all until the current time)
         """
@@ -368,15 +368,15 @@ class Datastream(object):
         if until is not None and until.tzinfo is None:
             until = until.replace(tzinfo=pytz.utc)
 
-        return self.backend.downsample_metrics(query_tags, until)
+        return self.backend.downsample_streams(query_tags, until)
 
-    def delete_metrics(self, query_tags=None):
+    def delete_streams(self, query_tags=None):
         """
-        Deletes datapoints for all metrics matching the specified
+        Deletes datapoints for all streams matching the specified
         query tags. If no query tags are specified, all downstream-related
         data is deleted from the backend.
 
-        :param query_tags: Tags that should be matched to metrics
+        :param query_tags: Tags that should be matched to streams
         """
 
-        self.backend.delete_metrics(query_tags)
+        self.backend.delete_streams(query_tags)

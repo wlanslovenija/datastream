@@ -1,10 +1,10 @@
 class DatastreamException(Exception):
     pass
 
-class MetricNotFound(DatastreamException):
+class StreamNotFound(DatastreamException):
     pass
 
-class MultipleMetricsReturned(DatastreamException):
+class MultipleStreamsReturned(DatastreamException):
     pass
 
 class UnsupportedDownsampler(DatastreamException, ValueError):
