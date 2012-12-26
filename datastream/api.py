@@ -196,6 +196,22 @@ TIME_DOWNSAMPLERS = {
     'intervals_std_dev': 'd', # standard deviation of all interval lengths
 }
 
+class Datapoints(object):
+    def batch_size(self, batch_size):
+        raise NotImplementedError
+
+    def count(self):
+        raise NotImplementedError
+
+    def __len__(self):
+        return self.count()
+
+    def __iter__(self):
+        raise NotImplementedError
+
+    def __getitem__(self, key):
+        raise NotImplementedError
+
 class Datastream(object):
     Granularity = Granularity
     Stream = Stream
@@ -306,7 +322,7 @@ class Datastream(object):
 
         return self.backend.append(stream_id, value, timestamp, check_timestamp)
 
-    def get_data(self, stream_id, granularity, start=None, end=None, start_exclusive=None, end_exclusive=None, value_downsamplers=None, time_downsamplers=None):
+    def get_data(self, stream_id, granularity, start=None, end=None, start_exclusive=None, end_exclusive=None, reverse=False, value_downsamplers=None, time_downsamplers=None):
         """
         Retrieves data from a certain time range and of a certain granularity.
 
@@ -316,9 +332,10 @@ class Datastream(object):
         :param end: Time range end, excluding the end (optional)
         :param start_exclusive: Time range start, excluding the start
         :param end_exclusive: Time range end, excluding the end (optional)
+        :param reverse: Should datapoints be returned in oldest to newest order (false), or in reverse (true)
         :param value_downsamplers: The list of downsamplers to limit datapoint values to (optional)
         :param time_downsamplers: The list of downsamplers to limit timestamp values to (optional)
-        :return: An iterator over datapoints from newest to oldest
+        :return: A `Datapoints` iterator over datapoints
         """
 
         # TODO: Do we want to allow user to specify order of datapoints returned?
@@ -354,7 +371,7 @@ class Datastream(object):
             if len(unsupported_downsamplers) > 0:
                 raise exceptions.UnsupportedDownsampler("Unsupported time downsampler(s): %s" % unsupported_downsamplers)
 
-        return self.backend.get_data(stream_id, granularity, start, end, start_exclusive, end_exclusive, value_downsamplers, time_downsamplers)
+        return self.backend.get_data(stream_id, granularity, start, end, start_exclusive, end_exclusive, reverse, value_downsamplers, time_downsamplers)
 
     def downsample_streams(self, query_tags=None, until=None):
         """

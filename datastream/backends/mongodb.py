@@ -275,6 +275,32 @@ class GranularityField(mongoengine.StringField):
         # No need for any special validation and no need for StringField validation
         pass
 
+class Datapoints(api.Datapoints):
+    def __init__(self, stream, cursor=None):
+        self.stream = stream
+        self.cursor = cursor
+
+    def batch_size(self, batch_size):
+        self.cursor.batch_size(batch_size)
+
+    def count(self):
+        if self.cursor is None:
+            return 0
+
+        return self.cursor.count()
+
+    def __iter__(self):
+        if self.cursor is not None:
+            for datapoint in self.cursor:
+                yield self.stream._format_datapoint(datapoint)
+
+    def __getitem__(self, key):
+        if self.cursor is None:
+            raise IndexError
+
+        for datapoint in self.cursor.__getitem__(key):
+            yield self.stream._format_datapoint(datapoint)
+
 class DownsampleState(mongoengine.EmbeddedDocument):
     timestamp = mongoengine.DateTimeField()
 
@@ -355,7 +381,15 @@ class Backend(object):
             collection = getattr(db.datapoints, granularity.name)
             collection.ensure_index([
                 ('m', pymongo.ASCENDING),
+                ('_id', pymongo.ASCENDING),
+            ])
+            collection.ensure_index([
+                ('m', pymongo.ASCENDING),
                 ('_id', pymongo.DESCENDING),
+            ])
+            # TODO: Do we really need the following two indexes?
+            collection.ensure_index([
+                ('_id', pymongo.ASCENDING),
             ])
             collection.ensure_index([
                 ('_id', pymongo.DESCENDING),
@@ -645,7 +679,7 @@ class Backend(object):
             'v': datapoint['v']
         }
 
-    def get_data(self, stream_id, granularity, start=None, end=None, start_exclusive=None, end_exclusive=None, value_downsamplers=None, time_downsamplers=None):
+    def get_data(self, stream_id, granularity, start=None, end=None, start_exclusive=None, end_exclusive=None, reverse=False, value_downsamplers=None, time_downsamplers=None):
         """
         Retrieves data from a certain time range and of a certain granularity.
 
@@ -655,9 +689,10 @@ class Backend(object):
         :param end: Time range end, excluding the end (optional)
         :param start_exclusive: Time range start, excluding the start
         :param end_exclusive: Time range end, excluding the end (optional)
+        :param reverse: Should datapoints be returned in oldest to newest order (false), or in reverse (true)
         :param value_downsamplers: The list of downsamplers to limit datapoint values to (optional)
         :param time_downsamplers: The list of downsamplers to limit timestamp values to (optional)
-        :return: An iterator over datapoints from newest to oldest
+        :return: A `Datapoints` iterator over datapoints
         """
 
         try:
@@ -713,12 +748,12 @@ class Backend(object):
             try:
                 start_timestamp = granularity.round_timestamp(start_exclusive) + ONE_SECOND_TIMEDELTA
             except OverflowError:
-                return
+                return Datapoints(self)
         else:
             start_timestamp = granularity.round_timestamp(start)
 
         if start_timestamp > self._max_timestamp:
-            return
+            return Datapoints(self)
 
         start_timestamp = self._force_timestamp_range(start_timestamp)
 
@@ -746,13 +781,13 @@ class Backend(object):
 
             if not overflow:
                 if end_timestamp <= self._min_timestamp:
-                    return
+                    return Datapoints(self)
 
                 end_timestamp = self._force_timestamp_range(end_timestamp)
 
                 # Optimization
                 if end_timestamp <= start_timestamp:
-                    return
+                    return Datapoints(self)
 
                 time_query.update({
                     '$lt': objectid.ObjectId.from_datetime(end_timestamp),
@@ -761,10 +796,9 @@ class Backend(object):
         datapoints = collection.find({
             'm': stream.id,
             '_id': time_query,
-        }, downsamplers).sort('_id', -1)
+        }, downsamplers).sort('_id', -1 if reverse else 1)
 
-        for datapoint in datapoints:
-            yield self._format_datapoint(datapoint)
+        return Datapoints(self, datapoints)
 
     def delete_streams(self, query_tags=None):
         """
@@ -975,8 +1009,7 @@ class Backend(object):
 
         downsampled_points = getattr(db.datapoints, granularity.name)
         current_granularity_period_timestamp = None
-        # TODO: Do we really need datapoints sorted in this order? Do we have index for this order?
-        for datapoint in datapoints.sort('_id'):
+        for datapoint in datapoints.sort('_id', 1):
             ts = datapoint['_id'].generation_time
             new_granularity_period_timestamp = granularity.round_timestamp(ts)
             if current_granularity_period_timestamp is None:
