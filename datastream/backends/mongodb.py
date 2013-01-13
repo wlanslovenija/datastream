@@ -387,13 +387,6 @@ class Backend(object):
                 ('m', pymongo.ASCENDING),
                 ('_id', pymongo.DESCENDING),
             ])
-            # TODO: Do we really need the following two indexes?
-            collection.ensure_index([
-                ('_id', pymongo.ASCENDING),
-            ])
-            collection.ensure_index([
-                ('_id', pymongo.DESCENDING),
-            ])
 
         self.callback = None
 
