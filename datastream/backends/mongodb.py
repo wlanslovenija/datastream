@@ -310,8 +310,7 @@ class DownsampleState(mongoengine.EmbeddedDocument):
 
 class Stream(mongoengine.Document):
     id = mongoengine.SequenceField(primary_key=True, db_alias=DATABASE_ALIAS)
-    # TODO: Use binary UUID format
-    external_id = mongoengine.UUIDField()
+    external_id = mongoengine.UUIDField(binary=True)
     value_downsamplers = mongoengine.ListField(mongoengine.StringField(
         choices=[downsampler.name for downsampler in ValueDownsamplers.values],
     ))
@@ -509,7 +508,7 @@ class Backend(object):
         """
 
         try:
-            stream = Stream.objects.get(external_id=stream_id)
+            stream = Stream.objects.get(external_id=uuid.UUID(stream_id))
             tags = self._get_stream_tags(stream)
         except Stream.DoesNotExist:
             raise exceptions.StreamNotFound
@@ -524,7 +523,7 @@ class Backend(object):
         :param tags: A list of new tags
         """
 
-        Stream.objects(external_id=stream_id).update(set__tags=list(self._process_tags(tags)))
+        Stream.objects(external_id=uuid.UUID(stream_id)).update(set__tags=list(self._process_tags(tags)))
 
     def remove_tag(self, stream_id, tag):
         """
@@ -534,7 +533,7 @@ class Backend(object):
         :param tag: Tag value to remove
         """
 
-        Stream.objects(external_id=stream_id).update(pull__tags=tag)
+        Stream.objects(external_id=uuid.UUID(stream_id)).update(pull__tags=tag)
 
     def clear_tags(self, stream_id):
         """
@@ -546,7 +545,7 @@ class Backend(object):
         :param stream_id: Stream identifier
         """
 
-        Stream.objects(external_id=stream_id).update(set__tags=[])
+        Stream.objects(external_id=uuid.UUID(stream_id)).update(set__tags=[])
 
     def _get_stream_queryset(self, query_tags):
         """
@@ -563,7 +562,7 @@ class Backend(object):
         for tag in query_tags[:]:
             if isinstance(tag, dict):
                 if 'stream_id' in tag:
-                    query_set = query_set.filter(external_id=tag['stream_id'])
+                    query_set = query_set.filter(external_id=uuid.UUID(tag['stream_id']))
                     query_tags.remove(tag)
 
         if not query_tags:
@@ -621,7 +620,7 @@ class Backend(object):
         self._supported_timestamp_range(timestamp)
 
         try:
-            stream = Stream.objects.get(external_id=stream_id)
+            stream = Stream.objects.get(external_id=uuid.UUID(stream_id))
         except Stream.DoesNotExist:
             raise exceptions.StreamNotFound
 
@@ -689,7 +688,7 @@ class Backend(object):
         """
 
         try:
-            stream = Stream.objects.get(external_id=stream_id)
+            stream = Stream.objects.get(external_id=uuid.UUID(stream_id))
         except Stream.DoesNotExist:
             raise exceptions.StreamNotFound
 
