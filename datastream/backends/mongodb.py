@@ -283,14 +283,14 @@ class DerivationOperators(object):
 
             pass
 
-        def update(self, src_stream, dst_stream, value, timestamp, **args):
+        def update(self, src_stream, dst_stream, timestamp, value, **args):
             """
             Called when a new datapoint is added to one of the source streams.
 
             :param src_stream: Source stream instance
             :param dst_stream: Derived stream instance
-            :param value: Newly inserted datapoint value
             :param timestamp: Newly inserted datapoint timestamp
+            :param value: Newly inserted datapoint value
             :param **args: Additional user-supplied arguments
             """
 
@@ -314,14 +314,14 @@ class DerivationOperators(object):
 
         name = 'sum'
 
-        def update(self, src_stream, dst_stream, value, timestamp, **args):
+        def update(self, src_stream, dst_stream, timestamp, value, **args):
             """
             Called when a new datapoint is added to one of the source streams.
 
             :param src_stream: Source stream instance
             :param dst_stream: Derived stream instance
-            :param value: Newly inserted datapoint value
             :param timestamp: Newly inserted datapoint timestamp
+            :param value: Newly inserted datapoint value
             :param **args: Additional user-supplied arguments
             """
 
@@ -381,14 +381,14 @@ class DerivationOperators(object):
             if len(stream_ids) > 1:
                 raise exceptions.InvalidOperatorArguments
 
-        def update(self, src_stream, dst_stream, value, timestamp, **args):
+        def update(self, src_stream, dst_stream, timestamp, value, **args):
             """
             Called when a new datapoint is added to one of the source streams.
 
             :param src_stream: Source stream instance
             :param dst_stream: Derived stream instance
-            :param value: Newly inserted datapoint value
             :param timestamp: Newly inserted datapoint timestamp
+            :param value: Newly inserted datapoint value
             :param **args: Additional user-supplied arguments
             """
 
@@ -893,7 +893,7 @@ class Backend(object):
                     continue
 
                 dop = DerivationOperators.get(descriptor.op)(self)
-                dop.update(stream, dstream, value, datapoint['_id'].generation_time, **descriptor.args)
+                dop.update(stream, dstream, datapoint['_id'].generation_time, value, **descriptor.args)
 
         # Call callback last
         self._callback(stream.external_id, stream.highest_granularity, datapoint)
