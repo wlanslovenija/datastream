@@ -270,10 +270,19 @@ class DerivationOperators(object):
 
         name = None
 
-        def __init__(self, backend):
-            self._backend = backend
+        def __init__(self, backend, dst_stream, **parameters):
+            """
+            Class constructor.
 
-        def get_parameters(self, stream_ids, **args):
+            :param backend: A valid MongoDB backend instance
+            :param dst_stream: Derived stream instance
+            """
+
+            self._backend = backend
+            self._stream = dst_stream
+
+        @classmethod
+        def get_parameters(cls, stream_ids, **args):
             """
             Performs validation of the supplied operator parameters and returns
             their database representation that will be used when calling the
@@ -281,11 +290,12 @@ class DerivationOperators(object):
 
             :param stream_ids: Stream identifiers
             :param **args: User-supplied arguments
+            :return: Database representation of the parameters
             """
 
             return args
 
-        def update(self, src_stream, dst_stream, timestamp, value, **args):
+        def update(self, src_stream, dst_stream, timestamp, value):
             """
             Called when a new datapoint is added to one of the source streams.
 
@@ -293,7 +303,6 @@ class DerivationOperators(object):
             :param dst_stream: Derived stream instance
             :param timestamp: Newly inserted datapoint timestamp
             :param value: Newly inserted datapoint value
-            :param **args: Additional user-supplied arguments
             """
 
             raise NotImplementedError
@@ -316,15 +325,13 @@ class DerivationOperators(object):
 
         name = 'sum'
 
-        def update(self, src_stream, dst_stream, timestamp, value, **args):
+        def update(self, src_stream, timestamp, value):
             """
             Called when a new datapoint is added to one of the source streams.
 
             :param src_stream: Source stream instance
-            :param dst_stream: Derived stream instance
             :param timestamp: Newly inserted datapoint timestamp
             :param value: Newly inserted datapoint value
-            :param **args: Additional user-supplied arguments
             """
 
             # First ensure that we have a numeric value, as we can't do anything with
@@ -332,37 +339,37 @@ class DerivationOperators(object):
             if not isinstance(value, (int, float)):
                 return
 
-            rounded_ts = dst_stream.highest_granularity.round_timestamp(timestamp)
+            rounded_ts = self._stream.highest_granularity.round_timestamp(timestamp)
             ts_key = rounded_ts.strftime("%Y%m%d%H%M%S")
             # TODO: This uses pymongo because MongoEngine can't handle multiple levels of dynamic fields
             # (in addition ME can't handle queries with field names that look like numbers)
             db = mongoengine.connection.get_db(DATABASE_ALIAS)
-            db.streams.update({'_id': dst_stream.id}, {
+            db.streams.update({'_id': self._stream.id}, {
                 '$inc': {'derive_state.%s.%s' % (ts_key, src_stream.id) : value}
             }, safe=True)
-            dst_stream.reload()
+            self._stream.reload()
 
-            if ts_key not in dst_stream.derive_state:
+            if ts_key not in self._stream.derive_state:
                 # This might happen when being updated from multiple threads and another thread has
                 # also handled this update
                 return
 
-            if len(dst_stream.derive_state[ts_key]) == len(dst_stream.derived_from.stream_ids):
+            if len(self._stream.derive_state[ts_key]) == len(self._stream.derived_from.stream_ids):
                 # Note that this append may be called multiple times with the same timestamp when
                 # multiple threads are calling update
                 try:
-                    self._backend.append(dst_stream, sum(dst_stream.derive_state[ts_key].values()), rounded_ts)
+                    self._backend.append(self._stream, sum(self._stream.derive_state[ts_key].values()), rounded_ts)
                 except exceptions.InvalidTimestamp:
                     pass
 
                 # Any keys that are less than or equal to ts_key are safe to remove as we have just
                 # appended something, and no threads can insert data between datapoints in the past
                 unset = {}
-                for key in dst_stream.derive_state.keys():
+                for key in self._stream.derive_state.keys():
                     if key <= ts_key:
                         unset['derive_state.%s' % key] = ''
 
-                db.streams.update({'_id': dst_stream.id}, {'$unset': unset}, safe=True)
+                db.streams.update({'_id': self._stream.id}, {'$unset': unset}, safe=True)
 
     class Derivative(_Base):
         """
@@ -371,7 +378,8 @@ class DerivationOperators(object):
 
         name = 'derivative'
 
-        def get_parameters(self, stream_ids, **args):
+        @classmethod
+        def get_parameters(cls, stream_ids, **args):
             """
             Performs validation of the supplied operator parameters and returns
             their database representation that will be used when calling the
@@ -379,6 +387,7 @@ class DerivationOperators(object):
 
             :param stream_ids: Stream identifiers
             :param **args: User-supplied arguments
+            :return: Database representation of the parameters
             """
 
             # The derivative operator supports only one source stream
@@ -387,15 +396,13 @@ class DerivationOperators(object):
 
             return args
 
-        def update(self, src_stream, dst_stream, timestamp, value, **args):
+        def update(self, src_stream, timestamp, value):
             """
             Called when a new datapoint is added to one of the source streams.
 
             :param src_stream: Source stream instance
-            :param dst_stream: Derived stream instance
             :param timestamp: Newly inserted datapoint timestamp
             :param value: Newly inserted datapoint value
-            :param **args: Additional user-supplied arguments
             """
 
             # First ensure that we have a numeric value, as we can't do anything with
@@ -403,21 +410,21 @@ class DerivationOperators(object):
             if not isinstance(value, (int, float)):
                 return
 
-            if dst_stream.derive_state is not None:
+            if self._stream.derive_state is not None:
                 # We already have a previous value, compute derivative if the previous point
                 # belongs to the previous granularity bucket
-                ts_prev = dst_stream.highest_granularity.round_timestamp(dst_stream.derive_state['t'])
-                ts_curr = dst_stream.highest_granularity.round_timestamp(timestamp)
+                ts_prev = self._stream.highest_granularity.round_timestamp(self._stream.derive_state['t'])
+                ts_curr = self._stream.highest_granularity.round_timestamp(timestamp)
                 delta = (ts_curr - ts_prev).total_seconds()
-                duration = dst_stream.highest_granularity.duration_in_seconds()
+                duration = self._stream.highest_granularity.duration_in_seconds()
 
                 if ts_prev != ts_curr and delta == duration:
-                    delta = float((timestamp - dst_stream.derive_state['t']).total_seconds())
-                    derivative = (value - dst_stream.derive_state['v']) / delta
-                    self._backend.append(dst_stream, derivative, timestamp)
+                    delta = float((timestamp - self._stream.derive_state['t']).total_seconds())
+                    derivative = (value - self._stream.derive_state['v']) / delta
+                    self._backend.append(self._stream, derivative, timestamp)
 
-            dst_stream.derive_state = {'v': value, 't': timestamp}
-            dst_stream.save()
+            self._stream.derive_state = {'v': value, 't': timestamp}
+            self._stream.save()
 
 class GranularityField(mongoengine.StringField):
     def __init__(self, **kwargs):
@@ -650,7 +657,7 @@ class Backend(object):
             # Setup source stream metadata for derivate streams
             if derive_from is not None:
                 # Validate and convert operator parameters
-                dop = DerivationOperators.get(derive_op)(self)
+                dop = DerivationOperators.get(derive_op)
                 derive_args = dop.get_parameters(derive_args)
 
                 # Validate that all source streams exist and resolve their internal ids
@@ -898,8 +905,8 @@ class Backend(object):
                     # TODO: What to do in this case?
                     continue
 
-                dop = DerivationOperators.get(descriptor.op)(self)
-                dop.update(stream, dstream, datapoint['_id'].generation_time, value, **descriptor.args)
+                dop = DerivationOperators.get(descriptor.op)(self, dstream, **descriptor.args)
+                dop.update(stream, datapoint['_id'].generation_time, value)
 
         # Call callback last
         self._callback(stream.external_id, stream.highest_granularity, datapoint)
