@@ -344,7 +344,7 @@ class DerivationOperators(object):
             # (in addition ME can't handle queries with field names that look like numbers)
             db = mongoengine.connection.get_db(DATABASE_ALIAS)
             db.streams.update({'_id': self._stream.id}, {
-                '$inc': {'derive_state.%s.%s' % (ts_key, src_stream.id) : value}
+                '$set': {('derive_state.%s.%s' % (ts_key, src_stream.id)): value}
             }, safe=True)
             self._stream.reload()
 
