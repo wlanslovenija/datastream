@@ -166,8 +166,8 @@ class BasicTest(MongoDBBasicTest):
         
         streamA = datastream.Stream(self.datastream.get_tags(streamA_id))
         streamB = datastream.Stream(self.datastream.get_tags(streamA_id))
-        self.assertEqual(len(streamA.contributes_to), 0)
-        self.assertEqual(len(streamB.contributes_to), 0)
+        self.assertEqual(hasattr(streamA, 'contributes_to'), False)
+        self.assertEqual(hasattr(streamB, 'contributes_to'), False)
 
         stream_id = self.datastream.ensure_stream([{'name': 'derived'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
             derive_from=[streamA_id, streamB_id], derive_op='sum')
@@ -178,10 +178,10 @@ class BasicTest(MongoDBBasicTest):
 
         self.assertEqual(len(streamA.contributes_to), 1)
         self.assertEqual(len(streamB.contributes_to), 1)
-        self.assertEqual(len(stream.contributes_to), 0)
+        self.assertEqual(hasattr(stream, 'contributes_to'), False)
 
-        self.assertIsNone(streamA.derived_from)
-        self.assertIsNone(streamB.derived_from)
+        self.assertEqual(hasattr(streamA, 'derived_from'), False)
+        self.assertEqual(hasattr(streamB, 'derived_from'), False)
         self.assertIsNotNone(stream.derived_from)
 
         another_stream_id = self.datastream.ensure_stream([{'name': 'derived2'}], [], self.value_downsamplers, datastream.Granularity.Seconds,

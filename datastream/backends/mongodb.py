@@ -720,9 +720,13 @@ class Backend(object):
             {'value_downsamplers': stream.value_downsamplers},
             {'time_downsamplers': self.time_downsamplers},
             {'highest_granularity': stream.highest_granularity},
-            {'derived_from': stream.derived_from},
-            {'contributes_to': stream.contributes_to}
         ]
+
+        if stream.derived_from:
+            tags += [{'derived_from': stream.derived_from}]
+        if stream.contributes_to:
+            tags += [{'contributes_to': stream.contributes_to}]
+
         return tags
 
     def get_tags(self, stream_id):

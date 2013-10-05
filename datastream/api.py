@@ -183,10 +183,6 @@ class Stream(object):
             raise ValueError("Supplied tags are missing 'time_downsamplers'.")
         if not hasattr(self, 'highest_granularity'):
             raise ValueError("Supplied tags are missing 'highest_granularity'.")
-        if not hasattr(self, 'derived_from'):
-            raise ValueError("Supplied tags are missing 'derived_from'.")
-        if not hasattr(self, 'contributes_to'):
-            raise ValueError("Supplied tags are missing 'contributes_to'.")
 
 RESERVED_TAGS = (
     'stream_id',
