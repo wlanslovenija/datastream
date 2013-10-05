@@ -273,15 +273,17 @@ class DerivationOperators(object):
         def __init__(self, backend):
             self._backend = backend
 
-        def validate_arguments(self, stream_ids, **args):
+        def get_parameters(self, stream_ids, **args):
             """
-            Performs argument validation.
+            Performs validation of the supplied operator parameters and returns
+            their database representation that will be used when calling the
+            update method.
 
             :param stream_ids: Stream identifiers
             :param **args: User-supplied arguments
             """
 
-            pass
+            return args
 
         def update(self, src_stream, dst_stream, timestamp, value, **args):
             """
@@ -369,9 +371,11 @@ class DerivationOperators(object):
 
         name = 'derivative'
 
-        def validate_arguments(self, stream_ids, **args):
+        def get_parameters(self, stream_ids, **args):
             """
-            Performs argument validation.
+            Performs validation of the supplied operator parameters and returns
+            their database representation that will be used when calling the
+            update method.
 
             :param stream_ids: Stream identifiers
             :param **args: User-supplied arguments
@@ -380,6 +384,8 @@ class DerivationOperators(object):
             # The derivative operator supports only one source stream
             if len(stream_ids) > 1:
                 raise exceptions.InvalidOperatorArguments
+
+            return args
 
         def update(self, src_stream, dst_stream, timestamp, value, **args):
             """
@@ -643,9 +649,9 @@ class Backend(object):
 
             # Setup source stream metadata for derivate streams
             if derive_from is not None:
-                # Validate operator arguments
+                # Validate and convert operator parameters
                 dop = DerivationOperators.get(derive_op)(self)
-                dop.validate_arguments(derive_args)
+                derive_args = dop.get_parameters(derive_args)
 
                 # Validate that all source streams exist and resolve their internal ids
                 derive_stream_ids = []
