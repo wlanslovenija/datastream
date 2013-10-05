@@ -314,16 +314,6 @@ class DerivationOperators(object):
 
         name = 'sum'
 
-        def validate_arguments(self, stream_ids, **args):
-            """
-            Performs argument validation.
-
-            :param stream_ids: Stream identifiers
-            :param **args: User-supplied arguments
-            """
-
-            pass
-
         def update(self, src_stream, dst_stream, value, timestamp, **args):
             """
             Called when a new datapoint is added to one of the source streams.
