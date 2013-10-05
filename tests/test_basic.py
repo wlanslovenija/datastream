@@ -144,6 +144,96 @@ class BasicTest(MongoDBBasicTest):
         self.assertItemsEqual(data[0]['v'].keys(), (datastream.VALUE_DOWNSAMPLERS['count'],))
         self.assertEqual(data[0]['v'][datastream.VALUE_DOWNSAMPLERS['count']], 1)
 
+    def test_derived_streams(self):
+        streamA_id = self.datastream.ensure_stream([{'name': 'srcA'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        streamB_id = self.datastream.ensure_stream([{'name': 'srcB'}], [], self.value_downsamplers, datastream.Granularity.Minutes)
+
+        with self.assertRaises(exceptions.IncompatibleGranularities):
+            self.datastream.ensure_stream([{'name': 'derived'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+                derive_from=[streamA_id, streamB_id], derive_op='sum')
+        with self.assertRaises(exceptions.IncompatibleGranularities):
+            self.datastream.ensure_stream([{'name': 'derived'}], [], self.value_downsamplers, datastream.Granularity.Minutes,
+                derive_from=[streamA_id, streamB_id], derive_op='sum')
+        with self.assertRaises(exceptions.UnsupportedDeriveOperator):
+            self.datastream.ensure_stream([{'name': 'derived'}], [], self.value_downsamplers, datastream.Granularity.Minutes,
+                derive_from=[streamA_id, streamB_id], derive_op='foobar')
+        with self.assertRaises(exceptions.StreamNotFound):
+            self.datastream.ensure_stream([{'name': 'derived'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+                derive_from=[streamA_id, '00000000-0000-0000-0000-000000000000'], derive_op='sum')
+
+        streamA_id = self.datastream.ensure_stream([{'name': 'srcX'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        streamB_id = self.datastream.ensure_stream([{'name': 'srcY'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        
+        streamA = datastream.Stream(self.datastream.get_tags(streamA_id))
+        streamB = datastream.Stream(self.datastream.get_tags(streamA_id))
+        self.assertEqual(len(streamA.contributes_to), 0)
+        self.assertEqual(len(streamB.contributes_to), 0)
+
+        stream_id = self.datastream.ensure_stream([{'name': 'derived'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=[streamA_id, streamB_id], derive_op='sum')
+
+        streamA = datastream.Stream(self.datastream.get_tags(streamA_id))
+        streamB = datastream.Stream(self.datastream.get_tags(streamA_id))
+        stream = datastream.Stream(self.datastream.get_tags(stream_id))
+
+        self.assertEqual(len(streamA.contributes_to), 1)
+        self.assertEqual(len(streamB.contributes_to), 1)
+        self.assertEqual(len(stream.contributes_to), 0)
+
+        self.assertIsNone(streamA.derived_from)
+        self.assertIsNone(streamB.derived_from)
+        self.assertIsNotNone(stream.derived_from)
+
+        another_stream_id = self.datastream.ensure_stream([{'name': 'derived2'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=streamA_id, derive_op='derivative')
+
+        streamA = datastream.Stream(self.datastream.get_tags(streamA_id))
+        streamB = datastream.Stream(self.datastream.get_tags(streamB_id))
+        self.assertEqual(len(streamA.contributes_to), 2)
+        self.assertEqual(len(streamB.contributes_to), 1)
+
+        with self.assertRaises(exceptions.AppendToDerivedStreamNotAllowed):
+            self.datastream.append(stream_id, 42)
+
+        ts1 = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        self.datastream.append(streamA_id, 21, ts1)
+        self.datastream.append(streamB_id, 21, ts1)
+
+        ts2 = datetime.datetime(2000, 1, 1, 12, 0, 1, tzinfo=pytz.utc)
+        self.datastream.append(streamA_id, 25, ts2)
+        self.datastream.append(streamB_id, 25, ts2)
+
+        ts2 = datetime.datetime(2000, 1, 1, 12, 0, 2, tzinfo=pytz.utc)
+        self.datastream.append(streamA_id, 28, ts2)
+        self.datastream.append(streamB_id, 28, ts2)
+
+        ts2 = datetime.datetime(2000, 1, 1, 12, 0, 3, tzinfo=pytz.utc)
+        self.datastream.append(streamA_id, 32, ts2)
+        self.datastream.append(streamB_id, 32, ts2)
+
+        ts2 = datetime.datetime(2000, 1, 1, 12, 0, 4, tzinfo=pytz.utc)
+        self.datastream.append(streamB_id, 25, ts2)
+        self.datastream.append(streamA_id, 25, ts2)
+
+        # Note the gap between the previous and the next point; the derivative operator
+        # must notice this and not compute a wrong derivative here
+
+        ts2 = datetime.datetime(2000, 1, 1, 12, 0, 10, tzinfo=pytz.utc)
+        self.datastream.append(streamA_id, 70, ts2)
+        self.datastream.append(streamB_id, 42, ts2)
+
+        ts2 = datetime.datetime(2000, 1, 1, 12, 0, 11, tzinfo=pytz.utc)
+        self.datastream.append(streamA_id, 74, ts2)
+        self.datastream.append(streamB_id, 42, ts2)
+
+        # Test sum operator
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts1))
+        self.assertEqual([x['v'] for x in data], [42, 50, 56, 64, 50, 112, 116])
+
+        # Test derivative operator
+        data = list(self.datastream.get_data(another_stream_id, self.datastream.Granularity.Seconds, start=ts1))
+        self.assertEqual([x['v'] for x in data], [4.0, 3.0, 4.0, -7.0, 4.0])
+
     def test_timestamp_ranges(self):
         stream_id = self.datastream.ensure_stream([{'name': 'foopub'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
         with self.assertRaises(exceptions.InvalidTimestamp):

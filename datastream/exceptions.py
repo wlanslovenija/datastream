@@ -13,8 +13,20 @@ class UnsupportedDownsampler(DatastreamException, ValueError):
 class UnsupportedGranularity(DatastreamException, ValueError):
     pass
 
+class UnsupportedDeriveOperator(DatastreamException, ValueError):
+    pass
+
 class ReservedTagNameError(DatastreamException, ValueError):
     pass
 
 class InvalidTimestamp(DatastreamException, ValueError):
+    pass
+
+class IncompatibleGranularities(DatastreamException, ValueError):
+    pass
+
+class AppendToDerivedStreamNotAllowed(DatastreamException, ValueError):
+    pass
+
+class InvalidOperatorArguments(DatastreamException, ValueError):
     pass

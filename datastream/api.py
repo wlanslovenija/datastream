@@ -42,6 +42,10 @@ class Granularity(object):
             return cls._name
 
         @classmethod
+        def duration_in_seconds(cls):
+            return cls._duration
+
+        @classmethod
         def round_timestamp(cls, timestamp):
             if timestamp.utcoffset() is not None:
                 timestamp = timestamp - timestamp.utcoffset()
@@ -60,42 +64,49 @@ class Granularity(object):
         _key = 's'
         _round_rule = ('year', 'month', 'day', 'hour', 'minute', 'second')
         _name = 'seconds'
+        _duration = 1
 
     class Seconds10(_Base):
         _order = -1
         _key = 'S'
         _round_rule = ('year', 'month', 'day', 'hour', 'minute', ('second', 10))
         _name = '10seconds'
+        _duration = 10
 
     class Minutes(_Base):
         _order = -10
         _key = 'm'
         _round_rule = ('year', 'month', 'day', 'hour', 'minute')
         _name = 'minutes'
+        _duration = 60
 
     class Minutes10(_Base):
         _order = -11
         _key = 'M'
         _round_rule = ('year', 'month', 'day', 'hour', ('minute', 10))
         _name = '10minutes'
+        _duration = 600
 
     class Hours(_Base):
         _order = -20
         _key = 'h'
         _round_rule = ('year', 'month', 'day', 'hour')
         _name = 'hours'
+        _duration = 3600
 
     class Hours6(_Base):
         _order = -21
         _key = 'H'
         _round_rule = ('year', 'month', 'day', ('hour', 6))
         _name = '6hours'
+        _duration = 21600
 
     class Days(_Base):
         _order = -30
         _key = 'd'
         _round_rule = ('year', 'month', 'day')
         _name = 'days'
+        _duration = 86400
 
     @utils.class_property
     def values(cls):
@@ -148,6 +159,18 @@ class Stream(object):
             except (ValueError, KeyError, TypeError):
                 pass
 
+            try:
+                self.derived_from = tag['derived_from']
+                continue
+            except (ValueError, KeyError, TypeError):
+                pass
+
+            try:
+                self.contributes_to = tag['contributes_to']
+                continue
+            except (ValueError, KeyError, TypeError):
+                pass
+
             tags.append(tag)
 
         self.tags = tags
@@ -160,12 +183,18 @@ class Stream(object):
             raise ValueError("Supplied tags are missing 'time_downsamplers'.")
         if not hasattr(self, 'highest_granularity'):
             raise ValueError("Supplied tags are missing 'highest_granularity'.")
+        if not hasattr(self, 'derived_from'):
+            raise ValueError("Supplied tags are missing 'derived_from'.")
+        if not hasattr(self, 'contributes_to'):
+            raise ValueError("Supplied tags are missing 'contributes_to'.")
 
 RESERVED_TAGS = (
     'stream_id',
     'value_downsamplers',
     'time_downsamplers',
     'highest_granularity',
+    'derived_from',
+    'contributes_to',
 )
 
 VALUE_DOWNSAMPLERS = {
@@ -196,6 +225,11 @@ TIME_DOWNSAMPLERS = {
     'intervals_std_dev': 'd', # standard deviation of all interval lengths
 }
 
+DERIVE_OPERATORS = {
+    'sum': 'SUM', # sum of multiple streams
+    'derivative': 'DERIVATIVE', # derivative of a stream
+}
+
 class Datapoints(object):
     def batch_size(self, batch_size):
         raise NotImplementedError
@@ -218,6 +252,7 @@ class Datastream(object):
     RESERVED_TAGS = RESERVED_TAGS
     VALUE_DOWNSAMPLERS = VALUE_DOWNSAMPLERS
     TIME_DOWNSAMPLERS = TIME_DOWNSAMPLERS
+    DERIVE_OPERATORS = DERIVE_OPERATORS
 
     # TODO: Implement support for callback
     def __init__(self, backend, callback=None):
@@ -231,7 +266,7 @@ class Datastream(object):
         self.backend = backend
         self.backend.set_callback(callback)
 
-    def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity):
+    def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity, derive_from=None, derive_op=None, derive_args=None):
         """
         Ensures that a specified stream exists.
 
@@ -241,6 +276,9 @@ class Datastream(object):
         :param value_downsamplers: A set of names of value downsampler functions for this stream
         :param highest_granularity: Predicted highest granularity of the data the stream
                                     will store, may be used to optimize data storage
+        :param derive_from: Create a derivate stream
+        :param derive_op: Derivation operation
+        :param derive_args: Derivation operation arguments
         :return: A stream identifier
         """
 
@@ -251,7 +289,17 @@ class Datastream(object):
         if len(unsupported_downsamplers) > 0:
             raise exceptions.UnsupportedDownsampler("Unsupported value downsampler(s): %s" % unsupported_downsamplers)
 
-        return self.backend.ensure_stream(query_tags, tags, value_downsamplers, highest_granularity)
+        if derive_from is not None:
+            if not isinstance(derive_from, (list, tuple)):
+                derive_from = [derive_from]
+            if derive_op is None:
+                raise ValueError("Missing 'derive_op' argument")
+            elif derive_op not in DERIVE_OPERATORS:
+                raise exceptions.UnsupportedDeriveOperator("Unsupported derive operator: %s" % derive_op)
+            if derive_args is None:
+                derive_args = {}
+
+        return self.backend.ensure_stream(query_tags, tags, value_downsamplers, highest_granularity, derive_from, derive_op, derive_args)
 
     def get_tags(self, stream_id):
         """

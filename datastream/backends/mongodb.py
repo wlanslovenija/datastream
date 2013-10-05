@@ -258,6 +258,171 @@ class TimeDownsamplers(DownsamplersBase):
             assert self.key not in output
             output[self.key] = self._to_datetime(self.last)
 
+class DerivationOperators(object):
+    """
+    A container for derivation operator classes.
+    """
+
+    class _Base(object):
+        """
+        Base class for derivation operators.
+        """
+
+        name = None
+
+        def __init__(self, backend):
+            self._backend = backend
+
+        def validate_arguments(self, stream_ids, **args):
+            """
+            Performs argument validation.
+
+            :param stream_ids: Stream identifiers
+            :param **args: User-supplied arguments
+            """
+
+            pass
+
+        def update(self, src_stream, dst_stream, value, timestamp, **args):
+            """
+            Called when a new datapoint is added to one of the source streams.
+
+            :param src_stream: Source stream instance
+            :param dst_stream: Derived stream instance
+            :param value: Newly inserted datapoint value
+            :param timestamp: Newly inserted datapoint timestamp
+            :param **args: Additional user-supplied arguments
+            """
+
+            pass
+
+    @classmethod
+    def get(cls, operator):
+        if not hasattr(cls, '_values'):
+            cls._values = {
+                getattr(cls, name).name: getattr(cls, name)
+                for name in cls.__dict__ if
+                    name != 'get' and inspect.isclass(getattr(cls, name)) and getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)
+            }
+
+        return cls._values[operator]
+
+    class Sum(_Base):
+        """
+        Computes the sum of multiple streams.
+        """
+
+        name = 'sum'
+
+        def validate_arguments(self, stream_ids, **args):
+            """
+            Performs argument validation.
+
+            :param stream_ids: Stream identifiers
+            :param **args: User-supplied arguments
+            """
+
+            pass
+
+        def update(self, src_stream, dst_stream, value, timestamp, **args):
+            """
+            Called when a new datapoint is added to one of the source streams.
+
+            :param src_stream: Source stream instance
+            :param dst_stream: Derived stream instance
+            :param value: Newly inserted datapoint value
+            :param timestamp: Newly inserted datapoint timestamp
+            :param **args: Additional user-supplied arguments
+            """
+
+            # First ensure that we have a numeric value, as we can't do anything with
+            # other values
+            if not isinstance(value, (int, float)):
+                return
+
+            rounded_ts = dst_stream.highest_granularity.round_timestamp(timestamp)
+            ts_key = rounded_ts.strftime("%Y%m%d%H%M%S")
+            # TODO: This uses pymongo because MongoEngine can't handle multiple levels of dynamic fields
+            # (in addition ME can't handle queries with field names that look like numbers)
+            db = mongoengine.connection.get_db(DATABASE_ALIAS)
+            db.streams.update({'_id': dst_stream.id}, {
+                '$inc': {'derive_state.%s.%s' % (ts_key, src_stream.id) : value}
+            }, safe=True)
+            dst_stream.reload()
+
+            if ts_key not in dst_stream.derive_state:
+                # This might happen when being updated from multiple threads and another thread has
+                # also handled this update
+                return
+
+            if len(dst_stream.derive_state[ts_key]) == len(dst_stream.derived_from.stream_ids):
+                # Note that this append may be called multiple times with the same timestamp when
+                # multiple threads are calling update
+                try:
+                    self._backend.append(dst_stream, sum(dst_stream.derive_state[ts_key].values()), rounded_ts)
+                except exceptions.InvalidTimestamp:
+                    pass
+
+                # Any keys that are less than or equal to ts_key are safe to remove as we have just
+                # appended something, and no threads can insert data between datapoints in the past
+                unset = {}
+                for key in dst_stream.derive_state.keys():
+                    if key <= ts_key:
+                        unset['derive_state.%s' % key] = ''
+
+                db.streams.update({'_id': dst_stream.id}, {'$unset': unset}, safe=True)
+
+    class Derivative(_Base):
+        """
+        Computes the derivative of a stream.
+        """
+
+        name = 'derivative'
+
+        def validate_arguments(self, stream_ids, **args):
+            """
+            Performs argument validation.
+
+            :param stream_ids: Stream identifiers
+            :param **args: User-supplied arguments
+            """
+
+            # The derivative operator supports only one source stream
+            if len(stream_ids) > 1:
+                raise exceptions.InvalidOperatorArguments
+
+        def update(self, src_stream, dst_stream, value, timestamp, **args):
+            """
+            Called when a new datapoint is added to one of the source streams.
+
+            :param src_stream: Source stream instance
+            :param dst_stream: Derived stream instance
+            :param value: Newly inserted datapoint value
+            :param timestamp: Newly inserted datapoint timestamp
+            :param **args: Additional user-supplied arguments
+            """
+
+            # First ensure that we have a numeric value, as we can't do anything with
+            # other values
+            if not isinstance(value, (int, float)):
+                return
+
+            if dst_stream.derive_state is not None:
+                # We already have a previous value, compute derivative if the previous point
+                # belongs to the previous granularity bucket
+                ts_prev = dst_stream.highest_granularity.round_timestamp(dst_stream.derive_state['t'])
+                ts_curr = dst_stream.highest_granularity.round_timestamp(timestamp)
+                delta = (ts_curr - ts_prev).total_seconds()
+                duration = dst_stream.highest_granularity.duration_in_seconds()
+
+                if ts_prev != ts_curr and delta == duration:
+                    delta = float((timestamp - dst_stream.derive_state['t']).total_seconds())
+                    derivative = (value - dst_stream.derive_state['v']) / delta
+                    self._backend.append(dst_stream, derivative, timestamp)
+
+            dst_stream.derive_state = {'v': value, 't': timestamp}
+            dst_stream.save()
+
 class GranularityField(mongoengine.StringField):
     def __init__(self, **kwargs):
         kwargs.update({
@@ -308,6 +473,15 @@ class DownsampleState(mongoengine.EmbeddedDocument):
         allow_inheritance=False,
     )
 
+class DerivedStreamDescriptor(mongoengine.EmbeddedDocument):
+    stream_ids = mongoengine.ListField(mongoengine.IntField())
+    op = mongoengine.StringField()
+    args = mongoengine.DynamicField()
+
+class ContributesToStreamDescriptor(mongoengine.EmbeddedDocument):
+    op = mongoengine.StringField()
+    args = mongoengine.DynamicField()
+
 class Stream(mongoengine.Document):
     id = mongoengine.SequenceField(primary_key=True, db_alias=DATABASE_ALIAS)
     external_id = mongoengine.UUIDField(binary=True)
@@ -316,6 +490,9 @@ class Stream(mongoengine.Document):
     ))
     downsample_state = mongoengine.MapField(mongoengine.EmbeddedDocumentField(DownsampleState))
     highest_granularity = GranularityField()
+    derived_from = mongoengine.EmbeddedDocumentField(DerivedStreamDescriptor)
+    derive_state = mongoengine.DynamicField()
+    contributes_to = mongoengine.MapField(mongoengine.EmbeddedDocumentField(ContributesToStreamDescriptor))
     tags = mongoengine.ListField(mongoengine.DynamicField())
 
     meta = dict(
@@ -432,7 +609,7 @@ class Backend(object):
 
         return converted_tags
 
-    def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity):
+    def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity, derive_from, derive_op, derive_args):
         """
         Ensures that a specified stream exists.
 
@@ -442,6 +619,9 @@ class Backend(object):
         :param value_downsamplers: A set of names of value downsampler functions for this stream
         :param highest_granularity: Predicted highest granularity of the data the stream
                                     will store, may be used to optimize data storage
+        :param derive_from: Create a derivate stream
+        :param derive_op: Derivation operation
+        :param derive_args: Derivation operation arguments
         :return: A stream identifier
         """
 
@@ -471,6 +651,30 @@ class Backend(object):
             stream.highest_granularity = highest_granularity
             stream.tags = list(self._process_tags(query_tags).union(self._process_tags(tags)))
 
+            # Setup source stream metadata for derivate streams
+            if derive_from is not None:
+                # Validate operator arguments
+                dop = DerivationOperators.get(derive_op)(self)
+                dop.validate_arguments(derive_args)
+
+                # Validate that all source streams exist and resolve their internal ids
+                derive_stream_ids = []
+                for stream_id in derive_from:
+                    try:
+                        dstream = Stream.objects.get(external_id=uuid.UUID(stream_id))
+                        if dstream.highest_granularity != highest_granularity:
+                            raise exceptions.IncompatibleGranularities
+
+                        derive_stream_ids.append(dstream.id)
+                    except Stream.DoesNotExist:
+                        raise exceptions.StreamNotFound
+
+                derived = DerivedStreamDescriptor()
+                derived.stream_ids = derive_stream_ids
+                derived.op = derive_op
+                derived.args = derive_args
+                stream.derived_from = derived
+
             # Initialize downsample state
             if highest_granularity != api.Granularity.values[-1]:
                 for granularity in api.Granularity.values[api.Granularity.values.index(highest_granularity) + 1:]:
@@ -480,6 +684,26 @@ class Backend(object):
                     stream.downsample_state[granularity.name] = state
 
             stream.save()
+
+            if derive_from is not None:
+                # Now that the stream has been saved, update all dependent streams' metadata
+                try:
+                    Stream.objects.filter(id__in=stream.derived_from.stream_ids).update(
+                        **{'set__contributes_to__%s' % stream.id : ContributesToStreamDescriptor(
+                            op=stream.derived_from.op,
+                            args=stream.derived_from.args
+                        )}
+                    )
+                except:
+                    # Update has failed, we have to undo everything and remove this stream
+                    try:
+                        Stream.objects.filter(id__in=stream.derived_from.stream_ids).update(
+                            **{'unset__contributes_to__%s' % stream.id : ''}
+                        )
+                    finally:
+                        stream.delete()
+                    
+                    raise
         except Stream.MultipleObjectsReturned:
             raise exceptions.MultipleStreamsReturned
 
@@ -496,6 +720,8 @@ class Backend(object):
             {'value_downsamplers': stream.value_downsamplers},
             {'time_downsamplers': self.time_downsamplers},
             {'highest_granularity': stream.highest_granularity},
+            {'derived_from': stream.derived_from},
+            {'contributes_to': stream.contributes_to}
         ]
         return tags
 
@@ -619,10 +845,18 @@ class Backend(object):
 
         self._supported_timestamp_range(timestamp)
 
-        try:
-            stream = Stream.objects.get(external_id=uuid.UUID(stream_id))
-        except Stream.DoesNotExist:
-            raise exceptions.StreamNotFound
+        stream = None
+        if not isinstance(stream_id, Stream):
+            try:
+                stream = Stream.objects.get(external_id=uuid.UUID(stream_id))
+            except Stream.DoesNotExist:
+                raise exceptions.StreamNotFound
+
+            # Appending is now allowed for derived streams
+            if stream.derived_from is not None:
+                raise exceptions.AppendToDerivedStreamNotAllowed
+        else:
+            stream = stream_id
 
         # Append the datapoint into appropriate granularity
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
@@ -654,6 +888,18 @@ class Backend(object):
                 collection.remove(datapoint['_id'], safe=True)
 
                 raise
+
+        # Update any streams we are contributing to
+        if stream.contributes_to:
+            for stream_id, descriptor in stream.contributes_to.iteritems():
+                try:
+                    dstream = Stream.objects.get(id=int(stream_id))
+                except Stream.DoesNotExist:
+                    # TODO: What to do in this case?
+                    continue
+
+                dop = DerivationOperators.get(descriptor.op)(self)
+                dop.update(stream, dstream, value, datapoint['_id'].generation_time, **descriptor.args)
 
         # Call callback last
         self._callback(stream.external_id, stream.highest_granularity, datapoint)
