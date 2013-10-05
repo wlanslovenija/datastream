@@ -311,8 +311,7 @@ class DerivationOperators(object):
     def get(cls, operator):
         if not hasattr(cls, '_values'):
             cls._values = {
-                getattr(cls, name).name: getattr(cls, name)
-                for name in cls.__dict__ if
+                getattr(cls, name).name: getattr(cls, name) for name in cls.__dict__ if
                     name != 'get' and inspect.isclass(getattr(cls, name)) and getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)
             }
 
