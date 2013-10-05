@@ -294,7 +294,7 @@ class DerivationOperators(object):
             :param **args: Additional user-supplied arguments
             """
 
-            pass
+            raise NotImplementedError
 
     @classmethod
     def get(cls, operator):
