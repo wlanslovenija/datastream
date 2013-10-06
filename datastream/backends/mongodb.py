@@ -729,6 +729,43 @@ class Backend(object):
 
         return unicode(stream.external_id)
 
+    def _map_derived_from(self, stream):
+        """
+        Maps derived from descriptor so it can be returned as a tag.
+
+        :param stream: Stream instance to map from
+        :return: Mapped descriptor
+        """
+
+        stream_ids = []
+        for stream_id in stream.derived_from.stream_ids:
+            sstream = Stream.objects.get(id=stream_id)
+            stream_ids.append(unicode(sstream.external_id))
+
+        return {
+            'stream_ids': stream_ids,
+            'op': stream.derived_from.op,
+            'args': stream.derived_from.args,
+        }
+
+    def _map_contributes_to(self, stream):
+        """
+        Maps contributes to descriptor so it can be returned as a tag.
+
+        :param stream: Stream instance to map from
+        :return: Mapped descriptor
+        """
+
+        result = {}
+        for stream_id, descriptor in stream.contributes_to.items():
+            stream = Stream.objects.get(id=stream_id)
+            result[unicode(stream.external_id)] = {
+                'op': descriptor.op,
+                'args': descriptor.args,
+            }
+
+        return result
+
     def _get_stream_tags(self, stream):
         """
         Returns a stream descriptor in the form of tags.
@@ -743,9 +780,9 @@ class Backend(object):
         ]
 
         if stream.derived_from:
-            tags += [{'derived_from': stream.derived_from}]
+            tags += [{'derived_from': self._map_derived_from(stream)}]
         if stream.contributes_to:
-            tags += [{'contributes_to': stream.contributes_to}]
+            tags += [{'contributes_to': self._map_contributes_to(stream)}]
 
         return tags
 
