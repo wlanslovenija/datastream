@@ -404,7 +404,7 @@ class DerivationOperators(object):
             if len(stream_ids) > 1:
                 raise exceptions.InvalidOperatorArguments
 
-            return args
+            return super(DerivationOperators.Derivative, cls).get_parameters(stream_ids, **args)
 
         def update(self, src_stream, timestamp, value):
             """
