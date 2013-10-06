@@ -503,6 +503,8 @@ class ContributesToStreamDescriptor(mongoengine.EmbeddedDocument):
 
 
 class Stream(mongoengine.Document):
+    # Sequence field uses integer which is much smaller than ObjectId value
+    # Because stream id is stored in each datapoint it is important that it is small
     id = mongoengine.SequenceField(primary_key=True, db_alias=DATABASE_ALIAS)
     external_id = mongoengine.UUIDField(binary=True)
     value_downsamplers = mongoengine.ListField(mongoengine.StringField(
