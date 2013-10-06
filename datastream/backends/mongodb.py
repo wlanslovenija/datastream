@@ -322,8 +322,9 @@ class DerivationOperators(object):
     def get(cls, operator):
         if not hasattr(cls, '_values'):
             cls._values = {
-                getattr(cls, name).name: getattr(cls, name) for name in cls.__dict__ if
-                    name != 'get' and inspect.isclass(getattr(cls, name)) and getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)
+                getattr(cls, name).name: getattr(cls, name)
+                for name in cls.__dict__
+                if name != 'get' and inspect.isclass(getattr(cls, name)) and getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)
             }
 
         return cls._values[operator]
@@ -517,7 +518,7 @@ class Stream(mongoengine.Document):
     meta = dict(
         db_alias=DATABASE_ALIAS,
         collection='streams',
-        indexes=('tags', 'external_id'),
+        indexes=['tags', 'external_id'],
         allow_inheritance=False,
     )
 
@@ -709,20 +710,20 @@ class Backend(object):
                 # Now that the stream has been saved, update all dependent streams' metadata
                 try:
                     Stream.objects.filter(id__in=stream.derived_from.stream_ids).update(
-                        **{'set__contributes_to__%s' % stream.id : ContributesToStreamDescriptor(
+                        **{('set__contributes_to__%s' % stream.id): ContributesToStreamDescriptor(
                             op=stream.derived_from.op,
-                            args=stream.derived_from.args
+                            args=stream.derived_from.args,
                         )}
                     )
                 except:
                     # Update has failed, we have to undo everything and remove this stream
                     try:
                         Stream.objects.filter(id__in=stream.derived_from.stream_ids).update(
-                            **{'unset__contributes_to__%s' % stream.id : ''}
+                            **{('unset__contributes_to__%s' % stream.id): ''}
                         )
                     finally:
                         stream.delete()
-                    
+
                     raise
         except Stream.MultipleObjectsReturned:
             raise exceptions.MultipleStreamsReturned
