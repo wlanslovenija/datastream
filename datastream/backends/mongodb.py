@@ -740,7 +740,7 @@ class Backend(object):
 
         stream_ids = []
         for stream_id in stream.derived_from.stream_ids:
-            sstream = Stream.objects.get(id=stream_id)
+            sstream = Stream.objects.get(id=int(stream_id))
             stream_ids.append(unicode(sstream.external_id))
 
         return {
@@ -759,7 +759,7 @@ class Backend(object):
 
         result = {}
         for stream_id, descriptor in stream.contributes_to.items():
-            stream = Stream.objects.get(id=stream_id)
+            stream = Stream.objects.get(id=int(stream_id))
             result[unicode(stream.external_id)] = {
                 'op': descriptor.op,
                 'args': descriptor.args,
