@@ -1,10 +1,12 @@
 from __future__ import absolute_import
 
-import datetime, inspect
+import datetime
+import inspect
 
 import pytz
 
 from . import exceptions, utils
+
 
 class Granularity(object):
     class _Base(object):
@@ -102,8 +104,9 @@ class Granularity(object):
         if not hasattr(cls, '_values'):
             cls._values = tuple(sorted(
                 [
-                    getattr(cls, name) for name in cls.__dict__ if
-                        name != 'values' and inspect.isclass(getattr(cls, name)) and getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)
+                    getattr(cls, name)
+                    for name in cls.__dict__
+                    if name != 'values' and inspect.isclass(getattr(cls, name)) and getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)
                 ],
                 reverse=True
             ))
@@ -119,6 +122,7 @@ assert all((len(granularity.key) == 1 for granularity in Granularity.values))
 assert len(set(granularity._order for granularity in Granularity.values)) == len(Granularity.values)
 
 assert Granularity.Seconds > Granularity.Seconds10 > Granularity.Minutes > Granularity.Minutes10 > Granularity.Hours > Granularity.Hours6 > Granularity.Days
+
 
 class Stream(object):
     def __init__(self, all_tags):
@@ -196,6 +200,7 @@ TIME_DOWNSAMPLERS = {
     'intervals_std_dev': 'd', # standard deviation of all interval lengths
 }
 
+
 class Datapoints(object):
     def batch_size(self, batch_size):
         raise NotImplementedError
@@ -211,6 +216,7 @@ class Datapoints(object):
 
     def __getitem__(self, key):
         raise NotImplementedError
+
 
 class Datastream(object):
     Granularity = Granularity

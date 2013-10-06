@@ -1,5 +1,12 @@
 language: python
 python: 2.7
 services: mongodb
-install: "python setup.py install"
-script: "python setup.py test"
+install:
+ - pip install pep8 --use-mirrors
+ - pip install https://github.com/lamby/django-lint/archive/master.zip pylint --use-mirrors
+ - python setup.py install
+before_script:
+ - pep8 datastream
+ - pylint datastream || true
+script:
+ - python -W error setup.py test
