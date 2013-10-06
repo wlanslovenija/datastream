@@ -356,7 +356,7 @@ class DerivationOperators(object):
             db = mongoengine.connection.get_db(DATABASE_ALIAS)
             db.streams.update({'_id': self._stream.id}, {
                 '$set': {('derive_state.%s.%s' % (ts_key, src_stream.id)): value}
-            }, safe=True)
+            }, w=1)
             self._stream.reload()
 
             if ts_key not in self._stream.derive_state:
@@ -379,7 +379,7 @@ class DerivationOperators(object):
                     if key <= ts_key:
                         unset['derive_state.%s' % key] = ''
 
-                db.streams.update({'_id': self._stream.id}, {'$unset': unset}, safe=True)
+                db.streams.update({'_id': self._stream.id}, {'$unset': unset}, w=1)
 
     class Derivative(_Base):
         """
@@ -925,7 +925,7 @@ class Backend(object):
 
             datapoint = {'_id': object_id, 'm': stream.id, 'v': value}
 
-        datapoint['_id'] = collection.insert(datapoint, safe=True)
+        datapoint['_id'] = collection.insert(datapoint, w=1)
 
         if timestamp is None and self._time_offset == ZERO_TIMEDELTA:
             # When timestamp is not specified, database generates one, so we check it here
@@ -933,7 +933,7 @@ class Backend(object):
                 self._timestamp_after_downsampled(stream, datapoint['_id'].generation_time)
             except exceptions.InvalidTimestamp:
                 # Cleanup
-                collection.remove(datapoint['_id'], safe=True)
+                collection.remove(datapoint['_id'], w=1)
 
                 raise
 
@@ -1311,7 +1311,7 @@ class Backend(object):
 
             # We want to process each granularity period only once, we want it to fail if there is an error in this
             # TODO: We should probably create some API function which reprocesses everything and fixes any inconsistencies
-            downsampled_points.insert(datapoint, safe=True)
+            downsampled_points.insert(datapoint, w=1)
 
             datapoints_for_callback.append((stream.external_id, granularity, datapoint))
 
