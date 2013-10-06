@@ -16,4 +16,4 @@ before_script:
  - pep8 datastream
  - pylint datastream || true
 script:
- - python -W error setup.py test
+ - python setup.py test
