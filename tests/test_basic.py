@@ -165,7 +165,7 @@ class BasicTest(MongoDBBasicTest):
         streamB_id = self.datastream.ensure_stream([{'name': 'srcY'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
         
         streamA = datastream.Stream(self.datastream.get_tags(streamA_id))
-        streamB = datastream.Stream(self.datastream.get_tags(streamA_id))
+        streamB = datastream.Stream(self.datastream.get_tags(streamB_id))
         self.assertEqual(hasattr(streamA, 'contributes_to'), False)
         self.assertEqual(hasattr(streamB, 'contributes_to'), False)
 
@@ -173,7 +173,7 @@ class BasicTest(MongoDBBasicTest):
             derive_from=[streamA_id, streamB_id], derive_op='sum')
 
         streamA = datastream.Stream(self.datastream.get_tags(streamA_id))
-        streamB = datastream.Stream(self.datastream.get_tags(streamA_id))
+        streamB = datastream.Stream(self.datastream.get_tags(streamB_id))
         stream = datastream.Stream(self.datastream.get_tags(stream_id))
 
         self.assertEqual(len(streamA.contributes_to), 1)
