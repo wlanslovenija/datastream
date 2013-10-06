@@ -506,6 +506,7 @@ class Stream(mongoengine.Document):
     # Sequence field uses integer which is much smaller than ObjectId value
     # Because stream id is stored in each datapoint it is important that it is small
     id = mongoengine.SequenceField(primary_key=True, db_alias=DATABASE_ALIAS)
+    # But externally we want fancy UUID IDs which do not allow enumeration of all streams
     external_id = mongoengine.UUIDField(binary=True)
     value_downsamplers = mongoengine.ListField(mongoengine.StringField(
         choices=[downsampler.name for downsampler in ValueDownsamplers.values],
