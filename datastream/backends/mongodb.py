@@ -368,7 +368,7 @@ class DerivationOperators(object):
                 # Note that this append may be called multiple times with the same timestamp when
                 # multiple threads are calling update
                 try:
-                    self._backend.append(self._stream, sum(self._stream.derive_state[ts_key].values()), rounded_ts)
+                    self._backend._append(self._stream, sum(self._stream.derive_state[ts_key].values()), rounded_ts)
                 except exceptions.InvalidTimestamp:
                     pass
 
@@ -431,7 +431,7 @@ class DerivationOperators(object):
                 if ts_prev != ts_curr and delta == duration:
                     delta = float((timestamp - self._stream.derive_state['t']).total_seconds())
                     derivative = (value - self._stream.derive_state['v']) / delta
-                    self._backend.append(self._stream, derivative, timestamp)
+                    self._backend._append(self._stream, derivative, timestamp)
 
             self._stream.derive_state = {'v': value, 't': timestamp}
             self._stream.save()
@@ -894,30 +894,17 @@ class Backend(object):
             else:
                 raise exceptions.InvalidTimestamp("Stream '%s' at granularity '%s' has already been downsampled until '%s' and datapoint timestamp falls into that range: %s" % (stream.external_id, granularity, state.timestamp, timestamp))
 
-    def append(self, stream_id, value, timestamp=None, check_timestamp=True):
+    def _append(self, stream, value, timestamp=None, check_timestamp=True):
         """
         Appends a datapoint into the datastream.
 
-        :param stream_id: Stream identifier
+        :param stream: Stream instance
         :param value: Datapoint value
         :param timestamp: Datapoint timestamp, must be equal or larger (newer) than the latest one, monotonically increasing (optional)
         :param check_timestamp: Check if timestamp is equal or larger (newer) than the latest one (default: true)
         """
 
         self._supported_timestamp_range(timestamp)
-
-        stream = None
-        if not isinstance(stream_id, Stream):
-            try:
-                stream = Stream.objects.get(external_id=uuid.UUID(stream_id))
-            except Stream.DoesNotExist:
-                raise exceptions.StreamNotFound
-
-            # Appending is now allowed for derived streams
-            if stream.derived_from is not None:
-                raise exceptions.AppendToDerivedStreamNotAllowed
-        else:
-            stream = stream_id
 
         # Append the datapoint into appropriate granularity
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
@@ -964,6 +951,28 @@ class Backend(object):
 
         # Call callback last
         self._callback(stream.external_id, stream.highest_granularity, datapoint)
+
+    def append(self, stream_id, value, timestamp=None, check_timestamp=True):
+        """
+        Appends a datapoint into the datastream.
+
+        :param stream_id: Stream identifier
+        :param value: Datapoint value
+        :param timestamp: Datapoint timestamp, must be equal or larger (newer) than the latest one, monotonically increasing (optional)
+        :param check_timestamp: Check if timestamp is equal or larger (newer) than the latest one (default: true)
+        """
+
+        stream = None
+        try:
+            stream = Stream.objects.get(external_id=uuid.UUID(stream_id))
+        except Stream.DoesNotExist:
+            raise exceptions.StreamNotFound
+
+        # Appending is not allowed for derived streams
+        if stream.derived_from is not None:
+            raise exceptions.AppendToDerivedStreamNotAllowed
+
+        self._append(stream, value, timestamp, check_timestamp)
 
     def _format_datapoint(self, datapoint):
         """
