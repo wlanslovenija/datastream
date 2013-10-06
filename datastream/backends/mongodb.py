@@ -1,4 +1,10 @@
-import calendar, datetime, inspect, os, struct, time, uuid
+import calendar
+import datetime
+import inspect
+import os
+import struct
+import time
+import uuid
 
 import pytz
 
@@ -12,10 +18,11 @@ from .. import api, exceptions, utils
 DATABASE_ALIAS = 'datastream'
 
 # The largest integer that can be stored in MongoDB; larger values need to use floats
-MAXIMUM_INTEGER = 2**63 - 1
+MAXIMUM_INTEGER = 2 ** 63 - 1
 
 ZERO_TIMEDELTA = datetime.timedelta()
 ONE_SECOND_TIMEDELTA = datetime.timedelta(seconds=1)
+
 
 class DownsamplersBase(object):
     """
@@ -46,11 +53,13 @@ class DownsamplersBase(object):
     def values(cls):
         if not hasattr(cls, '_values'):
             cls._values = tuple([
-                getattr(cls, name) for name in cls.__dict__ if
-                    name != 'values' and inspect.isclass(getattr(cls, name)) and getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)
+                getattr(cls, name)
+                for name in cls.__dict__
+                if name != 'values' and inspect.isclass(getattr(cls, name)) and getattr(cls, name) is not cls._Base and issubclass(getattr(cls, name), cls._Base)
             ])
 
         return cls._values
+
 
 class ValueDownsamplers(DownsamplersBase):
     """
@@ -186,7 +195,8 @@ class ValueDownsamplers(DownsamplersBase):
             if n == 1:
                 values[self.key] = 0
             else:
-                values[self.key] = (n * ss - s**2) / (n * (n - 1))
+                values[self.key] = (n * ss - s ** 2) / (n * (n - 1))
+
 
 class TimeDownsamplers(DownsamplersBase):
     """
@@ -257,6 +267,7 @@ class TimeDownsamplers(DownsamplersBase):
         def finish(self, output):
             assert self.key not in output
             output[self.key] = self._to_datetime(self.last)
+
 
 class DerivationOperators(object):
     """
@@ -425,6 +436,7 @@ class DerivationOperators(object):
             self._stream.derive_state = {'v': value, 't': timestamp}
             self._stream.save()
 
+
 class GranularityField(mongoengine.StringField):
     def __init__(self, **kwargs):
         kwargs.update({
@@ -441,6 +453,7 @@ class GranularityField(mongoengine.StringField):
     def validate(self, value):
         # No need for any special validation and no need for StringField validation
         pass
+
 
 class Datapoints(api.Datapoints):
     def __init__(self, stream, cursor=None):
@@ -468,6 +481,7 @@ class Datapoints(api.Datapoints):
         for datapoint in self.cursor.__getitem__(key):
             yield self.stream._format_datapoint(datapoint)
 
+
 class DownsampleState(mongoengine.EmbeddedDocument):
     timestamp = mongoengine.DateTimeField()
 
@@ -475,14 +489,17 @@ class DownsampleState(mongoengine.EmbeddedDocument):
         allow_inheritance=False,
     )
 
+
 class DerivedStreamDescriptor(mongoengine.EmbeddedDocument):
     stream_ids = mongoengine.ListField(mongoengine.IntField())
     op = mongoengine.StringField()
     args = mongoengine.DynamicField()
 
+
 class ContributesToStreamDescriptor(mongoengine.EmbeddedDocument):
     op = mongoengine.StringField()
     args = mongoengine.DynamicField()
+
 
 class Stream(mongoengine.Document):
     id = mongoengine.SequenceField(primary_key=True, db_alias=DATABASE_ALIAS)
@@ -504,6 +521,7 @@ class Stream(mongoengine.Document):
         allow_inheritance=False,
     )
 
+
 class Backend(object):
     value_downsamplers = set([downsampler.name for downsampler in ValueDownsamplers.values])
     time_downsamplers = set([downsampler.name for downsampler in TimeDownsamplers.values])
@@ -516,7 +534,7 @@ class Backend(object):
     # TODO: Support datapoints with timestamp before the epoch
     #_min_timestamp = datetime.datetime.fromtimestamp(-2**31, tz=pytz.utc)
     _min_timestamp = datetime.datetime.fromtimestamp(0, tz=pytz.utc)
-    _max_timestamp = datetime.datetime.fromtimestamp(2**31-1, tz=pytz.utc)
+    _max_timestamp = datetime.datetime.fromtimestamp(2 ** 31 - 1, tz=pytz.utc)
 
     def __init__(self, database_name, **connection_settings):
         """
@@ -536,7 +554,7 @@ class Backend(object):
                 sum(
                     [
                         [downsampler.name] + list(getattr(downsampler, 'dependencies', ()))
-                            for downsampler in ValueDownsamplers.values
+                        for downsampler in ValueDownsamplers.values
                     ],
                     []
                 )
@@ -547,7 +565,7 @@ class Backend(object):
                 sum(
                     [
                         [downsampler.name] + list(getattr(downsampler, 'dependencies', ()))
-                            for downsampler in TimeDownsamplers.values
+                        for downsampler in TimeDownsamplers.values
                     ],
                     []
                 )
@@ -868,7 +886,7 @@ class Backend(object):
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
         collection = getattr(db.datapoints, stream.highest_granularity.name)
         if timestamp is None and self._time_offset == ZERO_TIMEDELTA:
-            datapoint = {'m' : stream.id, 'v' : value}
+            datapoint = {'m': stream.id, 'v': value}
         else:
             object_id = self._generate_object_id(timestamp)
 
@@ -881,7 +899,7 @@ class Backend(object):
             # We always check this because it does not require database access
             self._timestamp_after_downsampled(stream, object_id.generation_time)
 
-            datapoint = {'_id' : object_id, 'm' : stream.id, 'v' : value}
+            datapoint = {'_id': object_id, 'm': stream.id, 'v': value}
 
         datapoint['_id'] = collection.insert(datapoint, safe=True)
 

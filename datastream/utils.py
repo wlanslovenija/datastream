@@ -8,6 +8,7 @@ class hashabledict(dict):
     def __eq__(self, other):
         return self.__key() == other.__key()
 
+
 class class_property(property):
     def __get__(self, instance, type):
         if instance is None:
