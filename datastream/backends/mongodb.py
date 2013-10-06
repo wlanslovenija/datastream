@@ -335,7 +335,7 @@ class Stream(mongoengine.Document):
     meta = dict(
         db_alias=DATABASE_ALIAS,
         collection='streams',
-        indexes=('tags', 'external_id'),
+        indexes=['tags', 'external_id'],
         allow_inheritance=False,
     )
 
