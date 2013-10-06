@@ -40,4 +40,3 @@ class AppendToDerivedStreamNotAllowed(DatastreamException, ValueError):
 
 class InvalidOperatorArguments(DatastreamException, ValueError):
     pass
-
