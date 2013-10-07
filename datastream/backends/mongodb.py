@@ -471,16 +471,22 @@ class Datapoints(api.Datapoints):
         return self.cursor.count()
 
     def __iter__(self):
-        if self.cursor is not None:
-            for datapoint in self.cursor:
-                yield self.stream._format_datapoint(datapoint)
+        if self.cursor is None:
+            return
+
+        for datapoint in self.cursor:
+            yield self.stream._format_datapoint(datapoint)
 
     def __getitem__(self, key):
         if self.cursor is None:
             raise IndexError
 
-        for datapoint in self.cursor.__getitem__(key):
-            yield self.stream._format_datapoint(datapoint)
+        if isinstance(key, slice):
+            return Datapoints(self.stream, cursor=self.cursor.__getitem__(key))
+        elif isinstance(key, int):
+            return self.stream._format_datapoint(self.cursor.__getitem__(key))
+        else:
+            raise AttributeError
 
 
 class DownsampleState(mongoengine.EmbeddedDocument):
