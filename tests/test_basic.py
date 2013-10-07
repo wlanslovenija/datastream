@@ -16,7 +16,9 @@ class MongoDBBasicTest(unittest.TestCase):
         self._callback_points.append((stream_id, granularity, datapoint))
 
     def setUp(self):
-        self.datastream = datastream.Datastream(mongodb.Backend(self.database_name), self._test_callback)
+        backend = mongodb.Backend(self.database_name)
+        backend._test_callback = self._test_callback
+        self.datastream = datastream.Datastream(backend)
         self.value_downsamplers = self.datastream.backend.value_downsamplers
         self.time_downsamplers = self.datastream.backend.time_downsamplers
         self._callback_points = []
@@ -63,7 +65,7 @@ class BasicTest(MongoDBBasicTest):
         self.assertItemsEqual(stream.tags, query_tags + tags)
 
         # Should not do anything
-        self.datastream.downsample_streams()
+        self.assertItemsEqual(self.datastream.downsample_streams(), [])
 
         data = self.datastream.get_data(stream_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
         self.assertEqual(len(data), 0)
@@ -74,7 +76,7 @@ class BasicTest(MongoDBBasicTest):
         # Callback should not have been fired
         self.assertItemsEqual(self._callback_points, [])
 
-        self.datastream.append(stream_id, 42)
+        self.assertEqual(self.datastream.append(stream_id, 42)['datapoint']['v'], 42)
         self.assertRaises(datastream.exceptions.InvalidTimestamp, lambda: self.datastream.append(stream_id, 42, datetime.datetime.min))
 
         data = self.datastream.get_data(stream_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), end_exclusive=datetime.datetime.utcfromtimestamp(time.time()))
@@ -95,7 +97,10 @@ class BasicTest(MongoDBBasicTest):
         # Artificially increase backend time for a minute so that downsample will do something for minute granularity
         self.datastream.backend._time_offset += datetime.timedelta(minutes=1)
 
-        self.datastream.downsample_streams()
+        new_datapoints = self.datastream.downsample_streams()
+        self.assertEquals(len(new_datapoints), 2)
+        self.assertEquals(new_datapoints[0]['datapoint']['v'], {'c': 1, 'd': 0, 'm': 42.0, 'l': 42, 'q': 1764, 's': 42, 'u': 42})
+        self.assertEquals(new_datapoints[1]['datapoint']['v'], {'c': 1, 'd': 0, 'm': 42.0, 'l': 42, 'q': 1764, 's': 42, 'u': 42})
 
         data = self.datastream.get_data(
             stream_id,
@@ -196,8 +201,8 @@ class BasicTest(MongoDBBasicTest):
             self.datastream.append(stream_id, 42)
 
         ts1 = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
-        self.datastream.append(streamA_id, 21, ts1)
-        self.datastream.append(streamB_id, 21, ts1)
+        self.assertEqual(self.datastream.append(streamA_id, 21, ts1)['datapoint']['t'], ts1)
+        self.assertEqual(self.datastream.append(streamB_id, 21, ts1)['datapoint']['v'], 21)
 
         ts2 = datetime.datetime(2000, 1, 1, 12, 0, 1, tzinfo=pytz.utc)
         self.datastream.append(streamA_id, 25, ts2)
