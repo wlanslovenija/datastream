@@ -215,9 +215,6 @@ class BasicTest(MongoDBBasicTest):
         self.datastream.append(streamB_id, 25, ts2)
         self.datastream.append(streamA_id, 25, ts2)
 
-        # Note the gap between the previous and the next point; the derivative operator
-        # must notice this and not compute a wrong derivative here
-
         ts2 = datetime.datetime(2000, 1, 1, 12, 0, 10, tzinfo=pytz.utc)
         self.datastream.append(streamA_id, 70, ts2)
         self.datastream.append(streamB_id, 42, ts2)
@@ -232,7 +229,7 @@ class BasicTest(MongoDBBasicTest):
 
         # Test derivative operator
         data = list(self.datastream.get_data(another_stream_id, self.datastream.Granularity.Seconds, start=ts1))
-        self.assertEqual([x['v'] for x in data], [4.0, 3.0, 4.0, -7.0, 4.0])
+        self.assertEqual([x['v'] for x in data], [4.0, 3.0, 4.0, -7.0, 7.5, 4.0])
 
     def test_timestamp_ranges(self):
         stream_id = self.datastream.ensure_stream([{'name': 'foopub'}], [], self.value_downsamplers, datastream.Granularity.Seconds)

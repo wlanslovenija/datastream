@@ -422,17 +422,10 @@ class DerivationOperators(object):
                 return
 
             if self._stream.derive_state is not None:
-                # We already have a previous value, compute derivative if the previous point
-                # belongs to the previous granularity bucket
-                ts_prev = self._stream.highest_granularity.round_timestamp(self._stream.derive_state['t'])
-                ts_curr = self._stream.highest_granularity.round_timestamp(timestamp)
-                delta = (ts_curr - ts_prev).total_seconds()
-                duration = self._stream.highest_granularity.duration_in_seconds()
-
-                if ts_prev != ts_curr and delta == duration:
-                    delta = float((timestamp - self._stream.derive_state['t']).total_seconds())
-                    derivative = (value - self._stream.derive_state['v']) / delta
-                    self._backend._append(self._stream, derivative, timestamp)
+                # We already have a previous value, compute derivative
+                delta = float((timestamp - self._stream.derive_state['t']).total_seconds())
+                derivative = (value - self._stream.derive_state['v']) / delta
+                self._backend._append(self._stream, derivative, timestamp)
 
             self._stream.derive_state = {'v': value, 't': timestamp}
             self._stream.save()
