@@ -352,7 +352,8 @@ class DerivationOperators(object):
 
             # Ensure that source stream granularity matches our highest granularity
             for stream_dsc in src_streams:
-                if stream_dsc.get('granularity', dst_stream.highest_granularity) != dst_stream.highest_granularity:
+                granularity = stream_dsc.get('granularity', stream_dsc['stream'].highest_granularity)
+                if granularity != dst_stream.highest_granularity:
                     raise exceptions.IncompatibleGranularities
 
             return super(DerivationOperators.Sum, cls).get_parameters(src_streams, dst_stream, **args)
@@ -369,6 +370,14 @@ class DerivationOperators(object):
 
             # First ensure that we have a numeric value, as we can't do anything with
             # other values
+            if isinstance(value, dict):
+                # TODO: This is probably not right, currently only the mean is taken into account
+                try:
+                    value = float(value[api.VALUE_DOWNSAMPLERS['sum']]) / value[api.VALUE_DOWNSAMPLERS['count']]
+                    timestamp = timestamp[api.TIME_DOWNSAMPLERS['last']]
+                except KeyError:
+                    pass
+
             if not isinstance(value, (int, float)):
                 return
 
@@ -427,6 +436,12 @@ class DerivationOperators(object):
             # The derivative operator supports only one source stream
             if len(src_streams) > 1:
                 raise exceptions.InvalidOperatorArguments
+
+            # The highest granularity of the source stream must match ours
+            stream_dsc = src_streams[0]
+            granularity = stream_dsc.get('granularity', stream_dsc['stream'].highest_granularity)
+            if granularity != dst_stream.highest_granularity:
+                raise exceptions.IncompatibleGranularities
 
             return super(DerivationOperators.Derivative, cls).get_parameters(src_streams, dst_stream, **args)
 
@@ -694,7 +709,9 @@ class Backend(object):
 
                     try:
                         dstream = Stream.objects.get(external_id=uuid.UUID(stream_dsc['stream']))
-                        if dstream.highest_granularity != highest_granularity:
+
+                        # One can't specify a granularity higher than the stream's highest one
+                        if stream_dsc.get('granularity', dstream.highest_granularity) > dstream.highest_granularity:
                             raise exceptions.IncompatibleGranularities
 
                         stream_dsc = stream_dsc.copy()
@@ -738,7 +755,7 @@ class Backend(object):
                         # FIXME: This is not in the constructor call because of a MongoEngine bug that
                         # calls to_python on the passed value even though the value is already a Python
                         # object
-                        dstream.granularity = stream_dsc.get('granularity', dstream.highest_granularity)
+                        dstream.contributes_to[str(stream.id)].granularity = stream_dsc.get('granularity', dstream.highest_granularity)
                         dstream.save()
                 except:
                     # Update has failed, we have to undo everything and remove this stream
@@ -926,7 +943,7 @@ class Backend(object):
             else:
                 raise exceptions.InvalidTimestamp("Stream '%s' at granularity '%s' has already been downsampled until '%s' and datapoint timestamp falls into that range: %s" % (stream.external_id, granularity, state.timestamp, timestamp))
 
-    def _process_contributes_to(self, stream, timestamp, value, granularity=None):
+    def _process_contributes_to(self, stream, timestamp, value, granularity):
         """
         Processes stream contributions to other streams.
 
@@ -941,7 +958,7 @@ class Backend(object):
 
         # Update any streams we are contributing to
         for stream_id, descriptor in stream.contributes_to.iteritems():
-            if granularity is not None and descriptor.granularity != granularity:
+            if descriptor.granularity != granularity:
                 continue
 
             try:
@@ -998,7 +1015,7 @@ class Backend(object):
                 raise
 
         # Process contributions to other streams
-        self._process_contributes_to(stream, datapoint['_id'].generation_time, value)
+        self._process_contributes_to(stream, datapoint['_id'].generation_time, value, stream.highest_granularity)
 
         ret = {
             'stream_id': str(stream.external_id),
@@ -1385,7 +1402,7 @@ class Backend(object):
             downsampled_points.insert(datapoint, w=1)
 
             # Process contributions to other streams
-            self._process_contributes_to(stream, datapoint['t'], value)
+            self._process_contributes_to(stream, datapoint['t'], value, granularity)
 
             new_datapoints.append({
                 'stream_id': str(stream.external_id),

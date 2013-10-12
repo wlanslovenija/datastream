@@ -281,6 +281,32 @@ class BasicTest(MongoDBBasicTest):
                 derive_op='sum'
             )
 
+        # Test sum for different granularities
+        streamA_id = self.datastream.ensure_stream([{'name': 'gA'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        streamB_id = self.datastream.ensure_stream([{'name': 'gB'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        stream_id = self.datastream.ensure_stream([{'name': 'sumdifg'}], [], self.value_downsamplers, datastream.Granularity.Seconds10,
+            derive_from=[
+                {'name': 'Stream A', 'stream': streamA_id, 'granularity': datastream.Granularity.Seconds10},
+                {'name': 'Stream B', 'stream': streamB_id, 'granularity': datastream.Granularity.Seconds10},
+            ],
+            derive_op='sum'
+        )
+
+        for i in xrange(32):
+            ts = datetime.datetime(2000, 1, 1, 12, 0, i, tzinfo=pytz.utc)
+            self.datastream.append(streamA_id, 5, ts)
+            self.datastream.append(streamB_id, 5, ts)
+
+        # Before downsampling, nothing should be present in derived stream
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
+        self.assertEqual(len(data), 0)
+
+        x = self.datastream.downsample_streams(until=ts + datetime.timedelta(hours=10))
+
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
+        self.assertEqual([x['v'] for x in data], [10.0, 10.0, 10.0, 10.0])
+
     def test_timestamp_ranges(self):
         stream_id = self.datastream.ensure_stream([{'name': 'foopub'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
         with self.assertRaises(exceptions.InvalidTimestamp):
