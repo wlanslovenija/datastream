@@ -488,16 +488,22 @@ class Datapoints(api.Datapoints):
         return self.cursor.count()
 
     def __iter__(self):
-        if self.cursor is not None:
-            for datapoint in self.cursor:
-                yield self.stream._format_datapoint(datapoint)
+        if self.cursor is None:
+            return
+
+        for datapoint in self.cursor:
+            yield self.stream._format_datapoint(datapoint)
 
     def __getitem__(self, key):
         if self.cursor is None:
             raise IndexError
 
-        for datapoint in self.cursor.__getitem__(key):
-            yield self.stream._format_datapoint(datapoint)
+        if isinstance(key, slice):
+            return Datapoints(self.stream, cursor=self.cursor.__getitem__(key))
+        elif isinstance(key, int):
+            return self.stream._format_datapoint(self.cursor.__getitem__(key))
+        else:
+            raise AttributeError
 
 
 class DownsampleState(mongoengine.EmbeddedDocument):
@@ -525,6 +531,7 @@ class Stream(mongoengine.Document):
     # Sequence field uses integer which is much smaller than ObjectId value
     # Because stream id is stored in each datapoint it is important that it is small
     id = mongoengine.SequenceField(primary_key=True, db_alias=DATABASE_ALIAS)
+    # But externally we want fancy UUID IDs which do not allow enumeration of all streams
     external_id = mongoengine.UUIDField(binary=True)
     value_downsamplers = mongoengine.ListField(mongoengine.StringField(
         choices=[downsampler.name for downsampler in ValueDownsamplers.values],
@@ -606,28 +613,11 @@ class Backend(object):
                 ('_id', pymongo.DESCENDING),
             ])
 
-        self.callback = None
+        # Only for testing, don't use!
+        self._test_callback = None
 
         # Used only to artificially advance time when testing, don't use!
         self._time_offset = ZERO_TIMEDELTA
-
-    def set_callback(self, callback):
-        """
-        Sets a datapoint notification callback that will be called every time a
-        new datapoint is added to the datastream.
-        """
-
-        self.callback = callback
-
-    def _callback(self, stream_id, granularity, datapoint):
-        """
-        A helper method that invokes the callback when one is registered.
-
-        Should be run after all backend's code so that if raises an exception, backend's state is consistent.
-        """
-
-        if self.callback is not None:
-            self.callback(str(stream_id), granularity, self._format_datapoint(datapoint))
 
     def _process_tags(self, tags):
         """
@@ -846,7 +836,9 @@ class Backend(object):
         :param tags: A list of new tags
         """
 
-        Stream.objects(external_id=uuid.UUID(stream_id)).update(set__tags=list(self._process_tags(tags)))
+        if not Stream.objects(external_id=uuid.UUID(stream_id)).update(set__tags=list(self._process_tags(tags))):
+            # Returned count is 1 if stream is found even if nothing changed, this is what we want
+            raise exceptions.StreamNotFound
 
     def remove_tag(self, stream_id, tag):
         """
@@ -856,19 +848,23 @@ class Backend(object):
         :param tag: Tag value to remove
         """
 
-        Stream.objects(external_id=uuid.UUID(stream_id)).update(pull__tags=tag)
+        if not Stream.objects(external_id=uuid.UUID(stream_id)).update(pull__tags=tag):
+            # Returned count is 1 if stream is found even if nothing removed, this is what we want
+            raise exceptions.StreamNotFound
 
     def clear_tags(self, stream_id):
         """
         Removes (clears) all non-readonly stream tags.
 
         Care should be taken that some tags are set immediately afterwards which uniquely
-        identify a stream to be able to use query the stream, in for example, `ensure_stream`.
+        identify a stream to be able to query the stream, in for example, `ensure_stream`.
 
         :param stream_id: Stream identifier
         """
 
-        Stream.objects(external_id=uuid.UUID(stream_id)).update(set__tags=[])
+        if not Stream.objects(external_id=uuid.UUID(stream_id)).update(set__tags=[]):
+            # Returned count is 1 if stream is found even if nothing changed, this is what we want
+            raise exceptions.StreamNotFound
 
     def _get_stream_queryset(self, query_tags):
         """
@@ -965,6 +961,7 @@ class Backend(object):
         :param value: Datapoint value
         :param timestamp: Datapoint timestamp, must be equal or larger (newer) than the latest one, monotonically increasing (optional)
         :param check_timestamp: Check if timestamp is equal or larger (newer) than the latest one (default: true)
+        :return: A dictionary containing `stream_id`, `granularity`, and `datapoint`
         """
 
         self._supported_timestamp_range(timestamp)
@@ -1003,8 +1000,17 @@ class Backend(object):
         # Process contributions to other streams
         self._process_contributes_to(stream, datapoint['_id'].generation_time, value)
 
-        # Call callback last
-        self._callback(stream.external_id, stream.highest_granularity, datapoint)
+        ret = {
+            'stream_id': str(stream.external_id),
+            'granularity': stream.highest_granularity,
+            'datapoint': self._format_datapoint(datapoint),
+        }
+
+        # Call test callback after everything
+        if self._test_callback is not None:
+            self._test_callback(**ret)
+
+        return ret
 
     def append(self, stream_id, value, timestamp=None, check_timestamp=True):
         """
@@ -1014,6 +1020,7 @@ class Backend(object):
         :param value: Datapoint value
         :param timestamp: Datapoint timestamp, must be equal or larger (newer) than the latest one, monotonically increasing (optional)
         :param check_timestamp: Check if timestamp is equal or larger (newer) than the latest one (default: true)
+        :return: A dictionary containing `stream_id`, `granularity`, and `datapoint`
         """
 
         stream = None
@@ -1026,7 +1033,7 @@ class Backend(object):
         if stream.derived_from is not None:
             raise exceptions.AppendToDerivedStreamNotAllowed
 
-        self._append(stream, value, timestamp, check_timestamp)
+        return self._append(stream, value, timestamp, check_timestamp)
 
     def _format_datapoint(self, datapoint):
         """
@@ -1213,14 +1220,20 @@ class Backend(object):
         :param query_tags: Tags that should be matched to streams
         :param until: Timestamp until which to downsample, not including datapoints
                       at a timestamp (optional, otherwise all until the current time)
+        :return: A list of dictionaries containing `stream_id`, `granularity`, and `datapoint`
+                 for each datapoint created while downsampling
         """
 
         if until is None:
             # TODO: Hm, this is not completely correct, because client time could be different than server time, we should allow use where client does not have to specify any timestamp and everything is done on the server
             until = datetime.datetime.now(pytz.utc) + self._time_offset
 
+        new_datapoints = []
+
         for stream in self._get_stream_queryset(query_tags):
-            self._downsample_check(stream, until)
+            new_datapoints += self._downsample_check(stream, until)
+
+        return new_datapoints
 
     def _downsample_check(self, stream, until_timestamp):
         """
@@ -1231,12 +1244,16 @@ class Backend(object):
         :param until_timestamp: Timestamp of the newly inserted datum
         """
 
+        new_datapoints = []
+
         for granularity in api.Granularity.values[api.Granularity.values.index(stream.highest_granularity) + 1:]:
             state = stream.downsample_state.get(granularity.name, None)
             rounded_timestamp = granularity.round_timestamp(until_timestamp)
             # TODO: Why "can't compare offset-naive and offset-aware datetimes" is sometimes thrown here?
             if state is None or state.timestamp is None or rounded_timestamp > state.timestamp:
-                self._downsample(stream, granularity, rounded_timestamp)
+                new_datapoints += self._downsample(stream, granularity, rounded_timestamp)
+
+        return new_datapoints
 
     def _generate_object_id(self, timestamp=None):
         """
@@ -1342,7 +1359,7 @@ class Backend(object):
         # Pack stream identifier to be used for object id generation
         stream_id = struct.pack('>Q', stream.id)
 
-        datapoints_for_callback = []
+        new_datapoints = []
 
         def store_downsampled_datapoint(timestamp):
             value = {}
@@ -1370,7 +1387,11 @@ class Backend(object):
             # Process contributions to other streams
             self._process_contributes_to(stream, datapoint['t'], value)
 
-            datapoints_for_callback.append((stream.external_id, granularity, datapoint))
+            new_datapoints.append({
+                'stream_id': str(stream.external_id),
+                'granularity': granularity,
+                'datapoint': self._format_datapoint(datapoint),
+            })
 
         downsampled_points = getattr(db.datapoints, granularity.name)
         current_granularity_period_timestamp = None
@@ -1404,6 +1425,9 @@ class Backend(object):
             state.timestamp = until_timestamp
             stream.save()
 
-        # And call callback for all new datapoints
-        for args in datapoints_for_callback:
-            self._callback(*args)
+        # And call test callback for all new datapoints
+        if self._test_callback is not None:
+            for kwargs in new_datapoints:
+                self._test_callback(**kwargs)
+
+        return new_datapoints

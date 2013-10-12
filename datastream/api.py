@@ -256,17 +256,14 @@ class Datastream(object):
     TIME_DOWNSAMPLERS = TIME_DOWNSAMPLERS
     DERIVE_OPERATORS = DERIVE_OPERATORS
 
-    # TODO: Implement support for callback
-    def __init__(self, backend, callback=None):
+    def __init__(self, backend):
         """
         Class constructor.
 
         :param backend: Backend instance
-        :param callback: Callback to call when new datapoint is appended or downsampled
         """
 
         self.backend = backend
-        self.backend.set_callback(callback)
 
     def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity, derive_from=None, derive_op=None, derive_args=None):
         """
@@ -321,7 +318,7 @@ class Datastream(object):
         :param tags: A list of new tags
         """
 
-        return self.backend.update_tags(stream_id, tags)
+        self.backend.update_tags(stream_id, tags)
 
     def remove_tag(self, stream_id, tag):
         """
@@ -331,19 +328,19 @@ class Datastream(object):
         :param tag: Tag value to remove
         """
 
-        return self.backend.remove_tag(stream_id, tag)
+        self.backend.remove_tag(stream_id, tag)
 
     def clear_tags(self, stream_id):
         """
         Removes (clears) all non-readonly stream tags.
 
         Care should be taken that some tags are set immediately afterwards which uniquely
-        identify a stream to be able to use query the stream, in for example, `ensure_stream`.
+        identify a stream to be able to query the stream, in for example, `ensure_stream`.
 
         :param stream_id: Stream identifier
         """
 
-        return self.backend.clear_tags(stream_id)
+        self.backend.clear_tags(stream_id)
 
     def find_streams(self, query_tags=None):
         """
@@ -363,7 +360,8 @@ class Datastream(object):
         :param value: Datapoint value
         :param timestamp: Datapoint timestamp, must be equal or larger (newer) than the latest one, monotonically increasing (optional)
         :param check_timestamp: Check if timestamp is equal or larger (newer) than the latest one (default: true)
-         """
+        :return: A dictionary containing `stream_id`, `granularity`, and `datapoint`
+        """
 
         if timestamp is not None and timestamp.tzinfo is None:
             timestamp = timestamp.replace(tzinfo=pytz.utc)
@@ -432,6 +430,8 @@ class Datastream(object):
         :param query_tags: Tags that should be matched to streams
         :param until: Timestamp until which to downsample, not including datapoints
                       at a timestamp (optional, otherwise all until the current time)
+        :return: A list of dictionaries containing `stream_id`, `granularity`, and `datapoint`
+                 for each datapoint created while downsampling
         """
 
         if until is not None and until.tzinfo is None:
