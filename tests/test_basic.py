@@ -163,6 +163,10 @@ class BasicTest(MongoDBBasicTest):
 
         streamA_id = self.datastream.ensure_stream([{'name': 'srcX'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
         streamB_id = self.datastream.ensure_stream([{'name': 'srcY'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+
+        with self.assertRaises(exceptions.InvalidOperatorArguments):
+            self.datastream.ensure_stream([{'name': 'derived'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+                derive_from=[streamA_id, streamB_id], derive_op='derivative')
         
         streamA = datastream.Stream(self.datastream.get_tags(streamA_id))
         streamB = datastream.Stream(self.datastream.get_tags(streamB_id))
@@ -230,6 +234,39 @@ class BasicTest(MongoDBBasicTest):
         # Test derivative operator
         data = list(self.datastream.get_data(another_stream_id, self.datastream.Granularity.Seconds, start=ts1))
         self.assertEqual([x['v'] for x in data], [4.0, 3.0, 4.0, -7.0, 7.5, 4.0])
+
+        # Test named source streams
+        streamA_id = self.datastream.ensure_stream([{'name': 'fooA'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        streamB_id = self.datastream.ensure_stream([{'name': 'fooB'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        stream_id = self.datastream.ensure_stream([{'name': 'derived3'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=[
+                {'name': 'Stream A', 'stream': streamA_id},
+                {'name': 'Stream B', 'stream': streamB_id},
+            ],
+            derive_op='sum'
+        )
+
+        ts1 = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        self.datastream.append(streamA_id, 21, ts1)
+        self.datastream.append(streamB_id, 21, ts1)
+
+        ts2 = datetime.datetime(2000, 1, 1, 12, 0, 1, tzinfo=pytz.utc)
+        self.datastream.append(streamA_id, 25, ts2)
+        self.datastream.append(streamB_id, 25, ts2)
+
+        data = list(self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts1))
+        self.assertEqual([x['v'] for x in data], [42, 50])
+
+        # Test invalid granularity specification
+        streamC_id = self.datastream.ensure_stream([{'name': 'srcZ'}], [], self.value_downsamplers, datastream.Granularity.Minutes)
+        with self.assertRaises(exceptions.IncompatibleGranularities):
+            self.datastream.ensure_stream([{'name': 'derived4'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+                derive_from=[
+                    {'name': 'Stream A', 'stream': streamA_id},
+                    {'name': 'Stream C', 'stream': streamC_id, 'granularity': self.datastream.Granularity.Seconds},
+                ],
+                derive_op='sum'
+            )
 
     def test_timestamp_ranges(self):
         stream_id = self.datastream.ensure_stream([{'name': 'foopub'}], [], self.value_downsamplers, datastream.Granularity.Seconds)

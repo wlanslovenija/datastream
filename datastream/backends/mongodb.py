@@ -293,27 +293,28 @@ class DerivationOperators(object):
             self._stream = dst_stream
 
         @classmethod
-        def get_parameters(cls, stream_ids, **args):
+        def get_parameters(cls, src_streams, dst_stream, **args):
             """
             Performs validation of the supplied operator parameters and returns
             their database representation that will be used when calling the
             update method.
 
-            :param stream_ids: Stream identifiers
+            :param src_streams: Source stream descriptors
+            :param dst_stream: Destination stream descriptor (unsaved)
             :param **args: User-supplied arguments
             :return: Database representation of the parameters
             """
 
             return args
 
-        def update(self, src_stream, dst_stream, timestamp, value):
+        def update(self, src_stream, timestamp, value, name=None):
             """
             Called when a new datapoint is added to one of the source streams.
 
             :param src_stream: Source stream instance
-            :param dst_stream: Derived stream instance
             :param timestamp: Newly inserted datapoint timestamp
             :param value: Newly inserted datapoint value
+            :param name: Stream name when specified
             """
 
             raise NotImplementedError
@@ -336,13 +337,34 @@ class DerivationOperators(object):
 
         name = 'sum'
 
-        def update(self, src_stream, timestamp, value):
+        @classmethod
+        def get_parameters(cls, src_streams, dst_stream, **args):
+            """
+            Performs validation of the supplied operator parameters and returns
+            their database representation that will be used when calling the
+            update method.
+
+            :param src_streams: Source stream descriptors
+            :param dst_stream: Destination stream descriptor (unsaved)
+            :param **args: User-supplied arguments
+            :return: Database representation of the parameters
+            """
+
+            # Ensure that source stream granularity matches our highest granularity
+            for stream_dsc in src_streams:
+                if stream_dsc.get('granularity', dst_stream.highest_granularity) != dst_stream.highest_granularity:
+                    raise exceptions.IncompatibleGranularities
+
+            return super(DerivationOperators.Sum, cls).get_parameters(src_streams, dst_stream, **args)
+
+        def update(self, src_stream, timestamp, value, name=None):
             """
             Called when a new datapoint is added to one of the source streams.
 
             :param src_stream: Source stream instance
             :param timestamp: Newly inserted datapoint timestamp
             :param value: Newly inserted datapoint value
+            :param name: Stream name when specified
             """
 
             # First ensure that we have a numeric value, as we can't do anything with
@@ -390,30 +412,32 @@ class DerivationOperators(object):
         name = 'derivative'
 
         @classmethod
-        def get_parameters(cls, stream_ids, **args):
+        def get_parameters(cls, src_streams, dst_stream, **args):
             """
             Performs validation of the supplied operator parameters and returns
             their database representation that will be used when calling the
             update method.
 
-            :param stream_ids: Stream identifiers
+            :param src_streams: Source stream descriptors
+            :param dst_stream: Destination stream descriptor (unsaved)
             :param **args: User-supplied arguments
             :return: Database representation of the parameters
             """
 
             # The derivative operator supports only one source stream
-            if len(stream_ids) > 1:
+            if len(src_streams) > 1:
                 raise exceptions.InvalidOperatorArguments
 
-            return super(DerivationOperators.Derivative, cls).get_parameters(stream_ids, **args)
+            return super(DerivationOperators.Derivative, cls).get_parameters(src_streams, dst_stream, **args)
 
-        def update(self, src_stream, timestamp, value):
+        def update(self, src_stream, timestamp, value, name=None):
             """
             Called when a new datapoint is added to one of the source streams.
 
             :param src_stream: Source stream instance
             :param timestamp: Newly inserted datapoint timestamp
             :param value: Newly inserted datapoint value
+            :param name: Stream name when specified
             """
 
             # First ensure that we have a numeric value, as we can't do anything with
@@ -491,6 +515,8 @@ class DerivedStreamDescriptor(mongoengine.EmbeddedDocument):
 
 
 class ContributesToStreamDescriptor(mongoengine.EmbeddedDocument):
+    name = mongoengine.StringField()
+    granularity = GranularityField()
     op = mongoengine.StringField()
     args = mongoengine.DynamicField()
 
@@ -669,21 +695,29 @@ class Backend(object):
 
             # Setup source stream metadata for derivate streams
             if derive_from is not None:
-                # Validate and convert operator parameters
-                dop = DerivationOperators.get(derive_op)
-                derive_args = dop.get_parameters(derive_args)
-
                 # Validate that all source streams exist and resolve their internal ids
                 derive_stream_ids = []
-                for stream_id in derive_from:
+                derive_stream_dscs = []
+                for stream_dsc in derive_from:
+                    if not isinstance(stream_dsc, dict):
+                            stream_dsc = {'stream': stream_dsc}
+
                     try:
-                        dstream = Stream.objects.get(external_id=uuid.UUID(stream_id))
+                        dstream = Stream.objects.get(external_id=uuid.UUID(stream_dsc['stream']))
                         if dstream.highest_granularity != highest_granularity:
                             raise exceptions.IncompatibleGranularities
 
+                        stream_dsc = stream_dsc.copy()
+                        stream_dsc['stream'] = dstream
+
                         derive_stream_ids.append(dstream.id)
+                        derive_stream_dscs.append(stream_dsc)
                     except Stream.DoesNotExist:
                         raise exceptions.StreamNotFound
+
+                # Validate and convert operator parameters
+                dop = DerivationOperators.get(derive_op)
+                derive_args = dop.get_parameters(derive_stream_dscs, stream, **derive_args)
 
                 derived = DerivedStreamDescriptor()
                 derived.stream_ids = derive_stream_ids
@@ -704,12 +738,18 @@ class Backend(object):
             if derive_from is not None:
                 # Now that the stream has been saved, update all dependent streams' metadata
                 try:
-                    Stream.objects.filter(id__in=stream.derived_from.stream_ids).update(
-                        **{('set__contributes_to__%s' % stream.id): ContributesToStreamDescriptor(
+                    for stream_dsc in derive_stream_dscs:
+                        dstream = stream_dsc['stream']
+                        dstream.contributes_to[str(stream.id)] = ContributesToStreamDescriptor(
+                            name=stream_dsc.get('name', None),
                             op=stream.derived_from.op,
-                            args=stream.derived_from.args,
-                        )}
-                    )
+                            args=stream.derived_from.args
+                        )
+                        # FIXME: This is not in the constructor call because of a MongoEngine bug that
+                        # calls to_python on the passed value even though the value is already a Python
+                        # object
+                        dstream.granularity = stream_dsc.get('granularity', dstream.highest_granularity)
+                        dstream.save()
                 except:
                     # Update has failed, we have to undo everything and remove this stream
                     try:
@@ -890,6 +930,33 @@ class Backend(object):
             else:
                 raise exceptions.InvalidTimestamp("Stream '%s' at granularity '%s' has already been downsampled until '%s' and datapoint timestamp falls into that range: %s" % (stream.external_id, granularity, state.timestamp, timestamp))
 
+    def _process_contributes_to(self, stream, timestamp, value, granularity=None):
+        """
+        Processes stream contributions to other streams.
+
+        :param stream: Stream whose contributions to check
+        :param timestamp: Timestamp of the datapoint that was inserted
+        :param value: Value of the datapoint that was inserted
+        :param granularity: Granularity of the current datapoint
+        """
+
+        if not stream.contributes_to:
+            return
+
+        # Update any streams we are contributing to
+        for stream_id, descriptor in stream.contributes_to.iteritems():
+            if granularity is not None and descriptor.granularity != granularity:
+                continue
+
+            try:
+                dstream = Stream.objects.get(id=int(stream_id))
+            except Stream.DoesNotExist:
+                # TODO: What to do in this case?
+                continue
+
+            dop = DerivationOperators.get(descriptor.op)(self, dstream, **descriptor.args)
+            dop.update(stream, timestamp, value, name=descriptor.name)
+
     def _append(self, stream, value, timestamp=None, check_timestamp=True):
         """
         Appends a datapoint into the datastream.
@@ -933,17 +1000,8 @@ class Backend(object):
 
                 raise
 
-        # Update any streams we are contributing to
-        if stream.contributes_to:
-            for stream_id, descriptor in stream.contributes_to.iteritems():
-                try:
-                    dstream = Stream.objects.get(id=int(stream_id))
-                except Stream.DoesNotExist:
-                    # TODO: What to do in this case?
-                    continue
-
-                dop = DerivationOperators.get(descriptor.op)(self, dstream, **descriptor.args)
-                dop.update(stream, datapoint['_id'].generation_time, value)
+        # Process contributions to other streams
+        self._process_contributes_to(stream, datapoint['_id'].generation_time, value)
 
         # Call callback last
         self._callback(stream.external_id, stream.highest_granularity, datapoint)
@@ -1308,6 +1366,9 @@ class Backend(object):
             # We want to process each granularity period only once, we want it to fail if there is an error in this
             # TODO: We should probably create some API function which reprocesses everything and fixes any inconsistencies
             downsampled_points.insert(datapoint, w=1)
+
+            # Process contributions to other streams
+            self._process_contributes_to(stream, datapoint['t'], value)
 
             datapoints_for_callback.append((stream.external_id, granularity, datapoint))
 
