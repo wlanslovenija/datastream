@@ -204,6 +204,10 @@ class BasicTest(MongoDBBasicTest):
         with self.assertRaises(exceptions.AppendToDerivedStreamNotAllowed):
             self.datastream.append(stream_id, 42)
 
+        # Test derived stream chaining
+        chained_stream_id = self.datastream.ensure_stream([{'name': 'chained'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=[streamA_id, another_stream_id], derive_op='sum')
+
         ts1 = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         self.assertEqual(self.datastream.append(streamA_id, 21, ts1)['datapoint']['t'], ts1)
         self.assertEqual(self.datastream.append(streamB_id, 21, ts1)['datapoint']['v'], 21)
@@ -239,6 +243,10 @@ class BasicTest(MongoDBBasicTest):
         # Test derivative operator
         data = self.datastream.get_data(another_stream_id, self.datastream.Granularity.Seconds, start=ts1)
         self.assertEqual([x['v'] for x in data], [4.0, 3.0, 4.0, -7.0, 7.5, 4.0])
+
+        # Test results of chained streams
+        data = self.datastream.get_data(chained_stream_id, self.datastream.Granularity.Seconds, start=ts1)
+        self.assertEqual([x['v'] for x in data], [29.0, 31.0, 36.0, 18.0, 77.5, 78.0])
 
         # Test named source streams
         streamA_id = self.datastream.ensure_stream([{'name': 'fooA'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
