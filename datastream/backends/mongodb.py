@@ -470,7 +470,6 @@ class DerivationOperators(object):
             self._stream.derive_state = {'v': value, 't': timestamp}
             self._stream.save()
 
-
     class CounterReset(_Base):
         """
         Computes the counter reset stream.
@@ -514,6 +513,7 @@ class DerivationOperators(object):
 
             if self._stream.derive_state is not None:
                 # We already have a previous value, check what value needs to be inserted
+                # TODO: Add a configurable maximum counter value so overflows can be detected
                 if self._stream.derive_state['v'] > value:
                     self._backend._append(self._stream, 1, timestamp)
 
