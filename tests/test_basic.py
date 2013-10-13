@@ -307,6 +307,19 @@ class BasicTest(MongoDBBasicTest):
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
         self.assertEqual([x['v'] for x in data], [10.0, 10.0, 10.0, 10.0])
 
+        # Test counter reset operator
+        streamA_id = self.datastream.ensure_stream([{'name': 'crA'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        reset_stream_id = self.datastream.ensure_stream([{'name': 'reset'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=streamA_id, derive_op='counter_reset')
+
+        for i, v in enumerate([10, 23, 28, 44, 2, 17, 90, 30, 2]):
+            ts = datetime.datetime(2000, 1, 1, 12, 0, i, tzinfo=pytz.utc)
+            self.datastream.append(streamA_id, v, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        data = self.datastream.get_data(reset_stream_id, self.datastream.Granularity.Seconds, start=ts)
+        self.assertEqual([x['v'] for x in data], [1, 1, 1])
+
     def test_timestamp_ranges(self):
         stream_id = self.datastream.ensure_stream([{'name': 'foopub'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
         with self.assertRaises(exceptions.InvalidTimestamp):

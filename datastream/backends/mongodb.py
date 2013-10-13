@@ -471,6 +471,56 @@ class DerivationOperators(object):
             self._stream.save()
 
 
+    class CounterReset(_Base):
+        """
+        Computes the counter reset stream.
+        """
+
+        name = 'counter_reset'
+
+        @classmethod
+        def get_parameters(cls, src_streams, dst_stream, **args):
+            """
+            Performs validation of the supplied operator parameters and returns
+            their database representation that will be used when calling the
+            update method.
+
+            :param src_streams: Source stream descriptors
+            :param dst_stream: Future destination stream descriptor (not yet saved)
+            :param **args: User-supplied arguments
+            :return: Database representation of the parameters
+            """
+
+            # The counter reset operator supports only one source stream
+            if len(src_streams) > 1:
+                raise exceptions.InvalidOperatorArguments
+
+            return super(DerivationOperators.CounterReset, cls).get_parameters(src_streams, dst_stream, **args)
+
+        def update(self, src_stream, timestamp, value, name=None):
+            """
+            Called when a new datapoint is added to one of the source streams.
+
+            :param src_stream: Source stream instance
+            :param timestamp: Newly inserted datapoint timestamp
+            :param value: Newly inserted datapoint value
+            :param name: Stream name when specified
+            """
+
+            # First ensure that we have a numeric value, as we can't do anything with
+            # other values
+            if not isinstance(value, (int, float)):
+                return
+
+            if self._stream.derive_state is not None:
+                # We already have a previous value, check what value needs to be inserted
+                if self._stream.derive_state['v'] > value:
+                    self._backend._append(self._stream, 1, timestamp)
+
+            self._stream.derive_state = {'v': value, 't': timestamp}
+            self._stream.save()
+
+
 class GranularityField(mongoengine.StringField):
     def __init__(self, **kwargs):
         kwargs.update({
