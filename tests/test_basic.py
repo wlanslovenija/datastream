@@ -320,6 +320,31 @@ class BasicTest(MongoDBBasicTest):
         data = self.datastream.get_data(reset_stream_id, self.datastream.Granularity.Seconds, start=ts)
         self.assertEqual([x['v'] for x in data], [1, 1, 1])
 
+        # Test counter derivative operator
+        uptime_stream_id = self.datastream.ensure_stream([{'name': 'up'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        reset_stream_id = self.datastream.ensure_stream([{'name': 'rsup'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=uptime_stream_id, derive_op='counter_reset')
+        data_stream_id = self.datastream.ensure_stream([{'name': 'data'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        stream_id = self.datastream.ensure_stream([{'name': 'rate'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=[
+                {'stream': data_stream_id},
+                {'name': 'reset', 'stream': reset_stream_id},
+            ],
+            derive_op='counter_derivative',
+            derive_args={'max_value': 256}
+        )
+
+        uptime = [10, 23, 28, 44, 2, 17, 90, 30, 2]
+        data   = [ 5, 12,  7, 25, 7, 18, 33, 40, 5]
+        for i, (u, v) in enumerate(zip(uptime, data)):
+            ts = datetime.datetime(2000, 1, 1, 12, 0, i, tzinfo=pytz.utc)
+            self.datastream.append(uptime_stream_id, u, ts)
+            self.datastream.append(data_stream_id, v, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
+        self.assertEqual([x['v'] for x in data], [7.0, 251.0, 18.0, 11.0, 15.0])
+
     def test_timestamp_ranges(self):
         stream_id = self.datastream.ensure_stream([{'name': 'foopub'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
         with self.assertRaises(exceptions.InvalidTimestamp):

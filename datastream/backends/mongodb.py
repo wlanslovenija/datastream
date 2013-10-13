@@ -380,6 +380,7 @@ class DerivationOperators(object):
             # First ensure that we have a numeric value, as we can't do anything with
             # other values
             if not isinstance(value, (int, float)):
+                # TODO: Emit some kind of warning here
                 return
 
             rounded_ts = self._stream.highest_granularity.round_timestamp(timestamp)
@@ -459,6 +460,7 @@ class DerivationOperators(object):
             # First ensure that we have a numeric value, as we can't do anything with
             # other values
             if not isinstance(value, (int, float)):
+                # TODO: Emit some kind of warning here
                 return
 
             if self._stream.derive_state is not None:
@@ -509,6 +511,7 @@ class DerivationOperators(object):
             # First ensure that we have a numeric value, as we can't do anything with
             # other values
             if not isinstance(value, (int, float)):
+                # TODO: Emit some kind of warning here
                 return
 
             if self._stream.derive_state is not None:
@@ -518,6 +521,101 @@ class DerivationOperators(object):
                     self._backend._append(self._stream, 1, timestamp)
 
             self._stream.derive_state = {'v': value, 't': timestamp}
+            self._stream.save()
+
+    class CounterDerivative(_Base):
+        """
+        Computes the derivative of a monotonically increasing counter stream.
+        """
+
+        name = 'counter_derivative'
+
+        def __init__(self, backend, dst_stream, max_value=None, **parameters):
+            """
+            Class constructor.
+            """
+
+            self._max_value = max_value
+
+            super(DerivationOperators.CounterDerivative, self).__init__(backend, dst_stream, **parameters)
+
+        @classmethod
+        def get_parameters(cls, src_streams, dst_stream, **args):
+            """
+            Performs validation of the supplied operator parameters and returns
+            their database representation that will be used when calling the
+            update method.
+
+            :param src_streams: Source stream descriptors
+            :param dst_stream: Future destination stream descriptor (not yet saved)
+            :param **args: User-supplied arguments
+            :return: Database representation of the parameters
+            """
+
+            # We require exactly two input streams, the data stream and the reset stream
+            if len(src_streams) != 2:
+                raise exceptions.InvalidOperatorArguments
+
+            # The data stream is unnamed, but the reset stream must be named "reset"
+            found_reset = False
+            found_data = False
+            for stream_dsc in src_streams:
+                if stream_dsc.get('name', None) is None:
+                    if found_data:
+                        raise exceptions.InvalidOperatorArguments
+
+                    found_data = True
+                elif stream_dsc['name'] == "reset":
+                    if found_reset:
+                        raise exceptions.InvalidOperatorArguments
+
+                    found_reset = True
+
+            if not found_reset or not found_data:
+                raise exceptions.InvalidOperatorArguments
+
+            return super(DerivationOperators.CounterDerivative, cls).get_parameters(src_streams, dst_stream, **args)
+
+        def update(self, src_stream, timestamp, value, name=None):
+            """
+            Called when a new datapoint is added to one of the source streams.
+
+            :param src_stream: Source stream instance
+            :param timestamp: Newly inserted datapoint timestamp
+            :param value: Newly inserted datapoint value
+            :param name: Stream name when specified
+            """
+
+            # First ensure that we have a numeric value, as we can't do anything with
+            # other values
+            if not isinstance(value, (int, float)):
+                # TODO: Emit some kind of warning here
+                return
+
+            if name is None:
+                # A data value has just been added
+                if self._stream.derive_state is not None:
+                    # We already have a previous value, compute derivative
+                    v1 = self._stream.derive_state['v']
+                    vdelta = value - v1
+                    if v1 > value:
+                        # Treat this as an overflow
+                        if self._max_value is not None:
+                            vdelta = self._max_value - v1 + value
+                        else:
+                            # TODO: Warning that we treated this as a reset even if the reset stream said nothing
+                            vdelta = None
+
+                    if vdelta is not None:
+                        tdelta = float((timestamp - self._stream.derive_state['t']).total_seconds())
+                        derivative = vdelta / tdelta
+                        self._backend._append(self._stream, derivative, timestamp)
+
+                self._stream.derive_state = {'v': value, 't': timestamp}
+            elif name == "reset" and value == 1:
+                # A reset stream marker has just been added, reset state
+                self._stream.derive_state = None
+
             self._stream.save()
 
 

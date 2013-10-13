@@ -229,6 +229,7 @@ DERIVE_OPERATORS = {
     'sum': 'SUM', # sum of multiple streams
     'derivative': 'DERIVATIVE', # derivative of a stream
     'counter_reset': 'COUNTER_RESET', # generates a counter reset stream
+    'counter_derivative': 'COUNTER_DERIVATIVE', # derivative of a monotonically increasing counter stream
 }
 
 
