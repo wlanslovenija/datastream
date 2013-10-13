@@ -705,7 +705,7 @@ class Backend(object):
                 derive_stream_dscs = []
                 for stream_dsc in derive_from:
                     if not isinstance(stream_dsc, dict):
-                            stream_dsc = {'stream': stream_dsc}
+                        stream_dsc = {'stream': stream_dsc}
 
                     try:
                         dstream = Stream.objects.get(external_id=uuid.UUID(stream_dsc['stream']))
