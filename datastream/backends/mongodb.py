@@ -300,7 +300,7 @@ class DerivationOperators(object):
             update method.
 
             :param src_streams: Source stream descriptors
-            :param dst_stream: Destination stream descriptor (unsaved)
+            :param dst_stream: Future destination stream descriptor (not yet saved)
             :param **args: User-supplied arguments
             :return: Database representation of the parameters
             """
@@ -345,7 +345,7 @@ class DerivationOperators(object):
             update method.
 
             :param src_streams: Source stream descriptors
-            :param dst_stream: Destination stream descriptor (unsaved)
+            :param dst_stream: Future destination stream descriptor (not yet saved)
             :param **args: User-supplied arguments
             :return: Database representation of the parameters
             """
@@ -368,8 +368,7 @@ class DerivationOperators(object):
             :param name: Stream name when specified
             """
 
-            # First ensure that we have a numeric value, as we can't do anything with
-            # other values
+            # Handle streams with lower granularities
             if isinstance(value, dict):
                 # TODO: This is probably not right, currently only the mean is taken into account
                 try:
@@ -378,6 +377,8 @@ class DerivationOperators(object):
                 except KeyError:
                     pass
 
+            # First ensure that we have a numeric value, as we can't do anything with
+            # other values
             if not isinstance(value, (int, float)):
                 return
 
@@ -428,7 +429,7 @@ class DerivationOperators(object):
             update method.
 
             :param src_streams: Source stream descriptors
-            :param dst_stream: Destination stream descriptor (unsaved)
+            :param dst_stream: Future destination stream descriptor (not yet saved)
             :param **args: User-supplied arguments
             :return: Database representation of the parameters
             """
