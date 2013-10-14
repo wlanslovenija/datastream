@@ -327,8 +327,8 @@ class BasicTest(MongoDBBasicTest):
         data_stream_id = self.datastream.ensure_stream([{'name': 'data'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
         stream_id = self.datastream.ensure_stream([{'name': 'rate'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
             derive_from=[
-                {'stream': data_stream_id},
                 {'name': 'reset', 'stream': reset_stream_id},
+                {'stream': data_stream_id},
             ],
             derive_op='counter_derivative',
             derive_args={'max_value': 256}

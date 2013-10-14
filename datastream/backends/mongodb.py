@@ -554,25 +554,14 @@ class DerivationOperators(object):
 
             # We require exactly two input streams, the data stream and the reset stream
             if len(src_streams) != 2:
-                raise exceptions.InvalidOperatorArguments
+                raise exceptions.InvalidOperatorArguments("'counter_derivative' requires exactly two input streams!")
 
-            # The data stream is unnamed, but the reset stream must be named "reset"
-            found_reset = False
-            found_data = False
-            for stream_dsc in src_streams:
-                if stream_dsc.get('name', None) is None:
-                    if found_data:
-                        raise exceptions.InvalidOperatorArguments
+            # The reset stream must be first and named "reset", the data stream must be second
+            if src_streams[0].get('name', None) != "reset":
+                raise exceptions.InvalidOperatorArguments("'counter_derivative' requires 'reset' to be the first input stream!")
 
-                    found_data = True
-                elif stream_dsc['name'] == "reset":
-                    if found_reset:
-                        raise exceptions.InvalidOperatorArguments
-
-                    found_reset = True
-
-            if not found_reset or not found_data:
-                raise exceptions.InvalidOperatorArguments
+            if src_streams[1].get('name', None) is not None:
+                raise exceptions.InvalidOperatorArguments("'counter_derivative' requires un unnamed data stream!")
 
             return super(DerivationOperators.CounterDerivative, cls).get_parameters(src_streams, dst_stream, **args)
 
