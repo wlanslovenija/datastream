@@ -561,7 +561,7 @@ class DerivationOperators(object):
                 raise exceptions.InvalidOperatorArguments("'counter_derivative' requires 'reset' to be the first input stream!")
 
             if src_streams[1].get('name', None) is not None:
-                raise exceptions.InvalidOperatorArguments("'counter_derivative' requires un unnamed data stream!")
+                raise exceptions.InvalidOperatorArguments("'counter_derivative' requires an unnamed data stream!")
 
             return super(DerivationOperators.CounterDerivative, cls).get_parameters(src_streams, dst_stream, **args)
 
