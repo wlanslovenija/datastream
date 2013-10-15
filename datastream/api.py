@@ -441,6 +441,15 @@ class Datastream(object):
 
         return self.backend.downsample_streams(query_tags, until)
 
+    def backprocess_streams(self, query_tags=None):
+        """
+        Requests the backend to backprocess any derived streams.
+
+        :param query_tags: Tags that should be matched to streams
+        """
+
+        return self.backend.backprocess_streams(query_tags)
+
     def delete_streams(self, query_tags=None):
         """
         Deletes datapoints for all streams matching the specified

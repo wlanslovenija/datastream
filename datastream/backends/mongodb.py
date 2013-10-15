@@ -695,6 +695,7 @@ class Stream(mongoengine.Document):
     derive_state = mongoengine.DynamicField()
     contributes_to = mongoengine.MapField(mongoengine.EmbeddedDocumentField(ContributesToStreamDescriptor))
     tags = mongoengine.ListField(mongoengine.DynamicField())
+    pending_backprocess = mongoengine.BooleanField()
 
     meta = dict(
         db_alias=DATABASE_ALIAS,
@@ -851,6 +852,14 @@ class Backend(object):
                         # One can't specify a granularity higher than the stream's highest one
                         if stream_dsc.get('granularity', dstream.highest_granularity) > dstream.highest_granularity:
                             raise exceptions.IncompatibleGranularities
+
+                        # If any of the input streams already holds some data, we pause our stream; there
+                        # is a potential race condition here, but this should not result in great loss
+                        try:
+                            self.get_data(unicode(dstream.external_id), dstream.highest_granularity, self._min_timestamp)[0]
+                            stream.pending_backprocess = True
+                        except IndexError:
+                            pass
 
                         stream_dsc = stream_dsc.copy()
                         stream_dsc['stream'] = dstream
@@ -1101,6 +1110,9 @@ class Backend(object):
 
             try:
                 dstream = Stream.objects.get(id=int(stream_id))
+                # Skip streams that are waiting to be backprocessed
+                if dstream.pending_backprocess:
+                    continue
             except Stream.DoesNotExist:
                 # TODO: What to do in this case?
                 continue
@@ -1586,3 +1598,92 @@ class Backend(object):
                 self._test_callback(**kwargs)
 
         return new_datapoints
+
+    def _backprocess_stream(self, stream):
+        """
+        Performs backprocessing of a single stream.
+
+        :param stream: Stream to backprocess
+        """
+
+        stream.reload()
+        if not stream.pending_backprocess:
+            return
+
+        # TODO: Clear derived stream on all granularities (we should probably add truncate_stream to API)
+
+        # Obtain the list of dependent streams and backprocess any pending streams
+        src_streams = []
+        for sstream in Stream.objects.filter(id__in=stream.derived_from.stream_ids):
+            if sstream.pending_backprocess:
+                self._backprocess_stream(sstream)
+            
+            descriptor = sstream.contributes_to[str(stream.id)]
+            src_streams.append((
+                sstream,
+                descriptor,
+                # TODO: Implement a _get_data that operates directly on Stream instances
+                iter(self.get_data(unicode(sstream.external_id), descriptor.granularity, self._min_timestamp))
+            ))
+
+        # Ensure that streams are in the proper order
+        src_streams.sort(key=lambda x: stream.derived_from.stream_ids.index(x[0].id))
+
+        # Apply streams in order until they all run out of datapoints
+        def get_timestamp(datapoint):
+            if isinstance(datapoint['t'], datetime.datetime):
+                return datapoint['t']
+
+            return datapoint['t'][api.TIME_DOWNSAMPLERS['last']]
+
+        lookahead = {}
+        while True:
+            # Determine the current point in time so we can properly apply datapoints
+            current_ts = None
+            for sstream, descriptor, data in src_streams:
+                datapoint = lookahead.get(sstream)
+                if datapoint is None:
+                    try:
+                        datapoint = data.next()
+                    except StopIteration:
+                        continue
+
+                ts = get_timestamp(datapoint)
+                if current_ts is None or ts < current_ts:
+                    current_ts = ts
+                lookahead[sstream] = datapoint
+
+            if current_ts is None:
+                break
+
+            # Apply datapoints in proper order
+            for sstream, descriptor, data in src_streams:
+                datapoint = lookahead.get(sstream)
+                if datapoint is not None:
+                    dop = DerivationOperators.get(descriptor.op)(self, stream, **descriptor.args)
+
+                    while get_timestamp(datapoint) <= current_ts:
+                        dop.update(sstream, datapoint['t'], datapoint['v'], name=descriptor.name)
+                        try:
+                            datapoint = data.next()
+                        except StopIteration:
+                            datapoint = None
+                            break
+
+                    lookahead[sstream] = datapoint
+
+        # Mark the derived stream as ready for normal processing (unpause)
+        stream.pending_backprocess = False
+        stream.save()
+
+    def backprocess_streams(self, query_tags=None):
+        """
+        Performs backprocessing of any derived streams that are marked as
+        'pending backprocess'.
+
+        :param query_tags: Tags that should be matched to streams
+        """
+
+        # Select all streams that are pending backprocessing
+        for stream in self._get_stream_queryset(query_tags).filter(pending_backprocess=True):
+            self._backprocess_stream(stream)

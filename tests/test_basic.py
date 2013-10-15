@@ -345,6 +345,25 @@ class BasicTest(MongoDBBasicTest):
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
         self.assertEqual([x['v'] for x in data], [7.0, 251.0, 18.0, 11.0, 15.0])
 
+        # Test stream backprocessing with the above uptime and data streams
+        reset_stream_id = self.datastream.ensure_stream([{'name': 'rsup2'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=uptime_stream_id, derive_op='counter_reset')
+        stream_id = self.datastream.ensure_stream([{'name': 'rate2'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=[
+                {'name': 'reset', 'stream': reset_stream_id},
+                {'stream': data_stream_id},
+            ],
+            derive_op='counter_derivative',
+            derive_args={'max_value': 256}
+        )
+
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
+        self.assertEqual(len(data), 0)
+
+        self.datastream.backprocess_streams()
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
+        self.assertEqual([x['v'] for x in data], [7.0, 251.0, 18.0, 11.0, 15.0])
+
     def test_timestamp_ranges(self):
         stream_id = self.datastream.ensure_stream([{'name': 'foopub'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
         with self.assertRaises(exceptions.InvalidTimestamp):
