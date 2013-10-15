@@ -1617,7 +1617,7 @@ class Backend(object):
         for sstream in Stream.objects.filter(id__in=stream.derived_from.stream_ids):
             if sstream.pending_backprocess:
                 self._backprocess_stream(sstream)
-            
+
             descriptor = sstream.contributes_to[str(stream.id)]
             src_streams.append((
                 sstream,
