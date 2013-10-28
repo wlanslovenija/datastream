@@ -847,24 +847,24 @@ class Backend(object):
                         stream_dsc = {'stream': stream_dsc}
 
                     try:
-                        dstream = Stream.objects.get(external_id=uuid.UUID(stream_dsc['stream']))
+                        src_stream = Stream.objects.get(external_id=uuid.UUID(stream_dsc['stream']))
 
                         # One can't specify a granularity higher than the stream's highest one
-                        if stream_dsc.get('granularity', dstream.highest_granularity) > dstream.highest_granularity:
+                        if stream_dsc.get('granularity', src_stream.highest_granularity) > src_stream.highest_granularity:
                             raise exceptions.IncompatibleGranularities
 
                         # If any of the input streams already holds some data, we pause our stream; there
                         # is a potential race condition here, but this should not result in great loss
                         try:
-                            self.get_data(unicode(dstream.external_id), dstream.highest_granularity, self._min_timestamp)[0]
+                            self.get_data(unicode(src_stream.external_id), src_stream.highest_granularity, self._min_timestamp)[0]
                             stream.pending_backprocess = True
                         except IndexError:
                             pass
 
                         stream_dsc = stream_dsc.copy()
-                        stream_dsc['stream'] = dstream
+                        stream_dsc['stream'] = src_stream
 
-                        derive_stream_ids.append(dstream.id)
+                        derive_stream_ids.append(src_stream.id)
                         derive_stream_dscs.append(stream_dsc)
                     except Stream.DoesNotExist:
                         raise exceptions.StreamNotFound
@@ -893,8 +893,8 @@ class Backend(object):
                 # Now that the stream has been saved, update all dependent streams' metadata
                 try:
                     for stream_dsc in derive_stream_dscs:
-                        dstream = stream_dsc['stream']
-                        dstream.contributes_to[str(stream.id)] = ContributesToStreamDescriptor(
+                        src_stream = stream_dsc['stream']
+                        src_stream.contributes_to[str(stream.id)] = ContributesToStreamDescriptor(
                             name=stream_dsc.get('name', None),
                             op=stream.derived_from.op,
                             args=stream.derived_from.args
@@ -902,8 +902,8 @@ class Backend(object):
                         # FIXME: This is not in the constructor call because of a MongoEngine bug that
                         # calls to_python on the passed value even though the value is already a Python
                         # object
-                        dstream.contributes_to[str(stream.id)].granularity = stream_dsc.get('granularity', dstream.highest_granularity)
-                        dstream.save()
+                        src_stream.contributes_to[str(stream.id)].granularity = stream_dsc.get('granularity', src_stream.highest_granularity)
+                        src_stream.save()
                 except:
                     # Update has failed, we have to undo everything and remove this stream
                     try:
@@ -1110,15 +1110,15 @@ class Backend(object):
                 continue
 
             try:
-                dstream = Stream.objects.get(id=int(stream_id))
+                derived_stream = Stream.objects.get(id=int(stream_id))
                 # Skip streams that are waiting to be backprocessed
-                if dstream.pending_backprocess:
+                if derived_stream.pending_backprocess:
                     continue
             except Stream.DoesNotExist:
                 # TODO: What to do in this case?
                 continue
 
-            derive_operator = DerivationOperators.get(descriptor.op)(self, dstream, **descriptor.args)
+            derive_operator = DerivationOperators.get(descriptor.op)(self, derived_stream, **descriptor.args)
             derive_operator.update(stream, timestamp, value, name=descriptor.name)
 
     def _append(self, stream, value, timestamp=None, check_timestamp=True):
