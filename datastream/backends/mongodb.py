@@ -293,7 +293,7 @@ class DerivationOperators(object):
             self._stream = dst_stream
 
         @classmethod
-        def get_parameters(cls, src_streams, dst_stream, **args):
+        def get_parameters(cls, src_streams, dst_stream, **arguments):
             """
             Performs validation of the supplied operator parameters and returns
             their database representation that will be used when calling the
@@ -301,11 +301,11 @@ class DerivationOperators(object):
 
             :param src_streams: Source stream descriptors
             :param dst_stream: Future destination stream descriptor (not yet saved)
-            :param **args: User-supplied arguments
+            :param **arguments: User-supplied arguments
             :return: Database representation of the parameters
             """
 
-            return args
+            return arguments
 
         def update(self, src_stream, timestamp, value, name=None):
             """
@@ -338,7 +338,7 @@ class DerivationOperators(object):
         name = 'sum'
 
         @classmethod
-        def get_parameters(cls, src_streams, dst_stream, **args):
+        def get_parameters(cls, src_streams, dst_stream, **arguments):
             """
             Performs validation of the supplied operator parameters and returns
             their database representation that will be used when calling the
@@ -346,7 +346,7 @@ class DerivationOperators(object):
 
             :param src_streams: Source stream descriptors
             :param dst_stream: Future destination stream descriptor (not yet saved)
-            :param **args: User-supplied arguments
+            :param **arguments: User-supplied arguments
             :return: Database representation of the parameters
             """
 
@@ -356,7 +356,7 @@ class DerivationOperators(object):
                 if granularity != dst_stream.highest_granularity:
                     raise exceptions.IncompatibleGranularities
 
-            return super(DerivationOperators.Sum, cls).get_parameters(src_streams, dst_stream, **args)
+            return super(DerivationOperators.Sum, cls).get_parameters(src_streams, dst_stream, **arguments)
 
         def update(self, src_stream, timestamp, value, name=None):
             """
@@ -423,7 +423,7 @@ class DerivationOperators(object):
         name = 'derivative'
 
         @classmethod
-        def get_parameters(cls, src_streams, dst_stream, **args):
+        def get_parameters(cls, src_streams, dst_stream, **arguments):
             """
             Performs validation of the supplied operator parameters and returns
             their database representation that will be used when calling the
@@ -431,7 +431,7 @@ class DerivationOperators(object):
 
             :param src_streams: Source stream descriptors
             :param dst_stream: Future destination stream descriptor (not yet saved)
-            :param **args: User-supplied arguments
+            :param **arguments: User-supplied arguments
             :return: Database representation of the parameters
             """
 
@@ -445,7 +445,7 @@ class DerivationOperators(object):
             if granularity != dst_stream.highest_granularity:
                 raise exceptions.IncompatibleGranularities
 
-            return super(DerivationOperators.Derivative, cls).get_parameters(src_streams, dst_stream, **args)
+            return super(DerivationOperators.Derivative, cls).get_parameters(src_streams, dst_stream, **arguments)
 
         def update(self, src_stream, timestamp, value, name=None):
             """
@@ -480,7 +480,7 @@ class DerivationOperators(object):
         name = 'counter_reset'
 
         @classmethod
-        def get_parameters(cls, src_streams, dst_stream, **args):
+        def get_parameters(cls, src_streams, dst_stream, **arguments):
             """
             Performs validation of the supplied operator parameters and returns
             their database representation that will be used when calling the
@@ -488,7 +488,7 @@ class DerivationOperators(object):
 
             :param src_streams: Source stream descriptors
             :param dst_stream: Future destination stream descriptor (not yet saved)
-            :param **args: User-supplied arguments
+            :param **arguments: User-supplied arguments
             :return: Database representation of the parameters
             """
 
@@ -496,7 +496,7 @@ class DerivationOperators(object):
             if len(src_streams) > 1:
                 raise exceptions.InvalidOperatorArguments
 
-            return super(DerivationOperators.CounterReset, cls).get_parameters(src_streams, dst_stream, **args)
+            return super(DerivationOperators.CounterReset, cls).get_parameters(src_streams, dst_stream, **arguments)
 
         def update(self, src_stream, timestamp, value, name=None):
             """
@@ -540,7 +540,7 @@ class DerivationOperators(object):
             super(DerivationOperators.CounterDerivative, self).__init__(backend, dst_stream, **parameters)
 
         @classmethod
-        def get_parameters(cls, src_streams, dst_stream, **args):
+        def get_parameters(cls, src_streams, dst_stream, **arguments):
             """
             Performs validation of the supplied operator parameters and returns
             their database representation that will be used when calling the
@@ -548,7 +548,7 @@ class DerivationOperators(object):
 
             :param src_streams: Source stream descriptors
             :param dst_stream: Future destination stream descriptor (not yet saved)
-            :param **args: User-supplied arguments
+            :param **arguments: User-supplied arguments
             :return: Database representation of the parameters
             """
 
@@ -563,7 +563,7 @@ class DerivationOperators(object):
             if src_streams[1].get('name', None) is not None:
                 raise exceptions.InvalidOperatorArguments("'counter_derivative' requires an unnamed data stream!")
 
-            return super(DerivationOperators.CounterDerivative, cls).get_parameters(src_streams, dst_stream, **args)
+            return super(DerivationOperators.CounterDerivative, cls).get_parameters(src_streams, dst_stream, **arguments)
 
         def update(self, src_stream, timestamp, value, name=None):
             """
