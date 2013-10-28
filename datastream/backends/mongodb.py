@@ -870,8 +870,8 @@ class Backend(object):
                         raise exceptions.StreamNotFound
 
                 # Validate and convert operator parameters
-                dop = DerivationOperators.get(derive_op)
-                derive_args = dop.get_parameters(derive_stream_dscs, stream, **derive_args)
+                derive_operator = DerivationOperators.get(derive_op)
+                derive_args = derive_operator.get_parameters(derive_stream_dscs, stream, **derive_args)
 
                 derived = DerivedStreamDescriptor()
                 derived.stream_ids = derive_stream_ids
@@ -1118,8 +1118,8 @@ class Backend(object):
                 # TODO: What to do in this case?
                 continue
 
-            dop = DerivationOperators.get(descriptor.op)(self, dstream, **descriptor.args)
-            dop.update(stream, timestamp, value, name=descriptor.name)
+            derive_operator = DerivationOperators.get(descriptor.op)(self, dstream, **descriptor.args)
+            derive_operator.update(stream, timestamp, value, name=descriptor.name)
 
     def _append(self, stream, value, timestamp=None, check_timestamp=True):
         """
@@ -1661,10 +1661,10 @@ class Backend(object):
             for sstream, descriptor, data in src_streams:
                 datapoint = lookahead.get(sstream)
                 if datapoint is not None:
-                    dop = DerivationOperators.get(descriptor.op)(self, stream, **descriptor.args)
+                    derive_operator = DerivationOperators.get(descriptor.op)(self, stream, **descriptor.args)
 
                     while get_timestamp(datapoint) <= current_ts:
-                        dop.update(sstream, datapoint['t'], datapoint['v'], name=descriptor.name)
+                        derive_operator.update(sstream, datapoint['t'], datapoint['v'], name=descriptor.name)
                         try:
                             datapoint = data.next()
                         except StopIteration:
