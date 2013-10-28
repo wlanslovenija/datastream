@@ -694,8 +694,8 @@ class Stream(mongoengine.Document):
     derived_from = mongoengine.EmbeddedDocumentField(DerivedStreamDescriptor)
     derive_state = mongoengine.DynamicField()
     contributes_to = mongoengine.MapField(mongoengine.EmbeddedDocumentField(ContributesToStreamDescriptor))
-    tags = mongoengine.ListField(mongoengine.DynamicField())
     pending_backprocess = mongoengine.BooleanField()
+    tags = mongoengine.ListField(mongoengine.DynamicField())
 
     meta = dict(
         db_alias=DATABASE_ALIAS,
@@ -967,6 +967,7 @@ class Backend(object):
             {'value_downsamplers': stream.value_downsamplers},
             {'time_downsamplers': self.time_downsamplers},
             {'highest_granularity': stream.highest_granularity},
+            {'pending_backprocess': bool(stream.pending_backprocess)}
         ]
 
         if stream.derived_from:

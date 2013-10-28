@@ -357,12 +357,18 @@ class BasicTest(MongoDBBasicTest):
             derive_args={'max_value': 256}
         )
 
+        stream = datastream.Stream(self.datastream.get_tags(stream_id))
+        self.assertEqual(stream.pending_backprocess, True)
+
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
         self.assertEqual(len(data), 0)
 
         self.datastream.backprocess_streams()
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
         self.assertEqual([x['v'] for x in data], [7.0, 251.0, 18.0, 11.0, 15.0])
+
+        stream = datastream.Stream(self.datastream.get_tags(stream_id))
+        self.assertEqual(stream.pending_backprocess, False)
 
     def test_timestamp_ranges(self):
         stream_id = self.datastream.ensure_stream([{'name': 'foopub'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
