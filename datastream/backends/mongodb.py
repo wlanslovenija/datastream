@@ -899,7 +899,7 @@ class Backend(object):
                             op=stream.derived_from.op,
                             args=stream.derived_from.args
                         )
-                        # FIXME: This is not in the constructor call because of a MongoEngine bug that
+                        # TODO: This is not in the constructor call because of a MongoEngine bug that
                         # calls to_python on the passed value even though the value is already a Python
                         # object
                         src_stream.contributes_to[str(stream.id)].granularity = stream_dsc.get('granularity', src_stream.highest_granularity)
