@@ -629,7 +629,7 @@ class GranularityField(mongoengine.StringField):
         except TypeError:
             if issubclass(value, api.Granularity._Base):
                 return value
-            
+
             raise
 
     def to_mongo(self, value):
