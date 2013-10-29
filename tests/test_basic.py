@@ -1,4 +1,4 @@
-import datetime, time, unittest
+import datetime, time, unittest, warnings
 
 import pytz
 
@@ -369,6 +369,24 @@ class BasicTest(MongoDBBasicTest):
 
         stream = datastream.Stream(self.datastream.get_tags(stream_id))
         self.assertEqual(stream.pending_backprocess, False)
+
+    def test_derived_stream_warnings(self):
+        streamA_id = self.datastream.ensure_stream([{'name': 'sA'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        streamB_id = self.datastream.ensure_stream([{'name': 'sB'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        stream_id = self.datastream.ensure_stream([{'name': 'dA'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=[streamA_id, streamB_id], derive_op='sum')
+        stream_id = self.datastream.ensure_stream([{'name': 'dB'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=[streamA_id], derive_op='derivative')
+
+        # Test warnings for sum/derivative operators
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 1, tzinfo=pytz.utc)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            self.datastream.append(streamA_id, "foo", ts)
+            self.datastream.append(streamB_id, "bar", ts)
+
+            self.assertEqual(len(w), 3)
+            self.assertEqual(all([x.category == exceptions.InvalidValueWarning for x in w]), True)
 
     def test_timestamp_ranges(self):
         stream_id = self.datastream.ensure_stream([{'name': 'foopub'}], [], self.value_downsamplers, datastream.Granularity.Seconds)

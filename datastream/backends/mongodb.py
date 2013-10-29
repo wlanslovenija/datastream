@@ -5,6 +5,7 @@ import os
 import struct
 import time
 import uuid
+import warnings
 
 import pytz
 
@@ -102,7 +103,10 @@ class ValueDownsamplers(DownsamplersBase):
             self.sum = 0
 
         def update(self, datum):
-            self.sum += datum
+            try:
+                self.sum += datum
+            except TypeError:
+                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value for 'sum' downsampler."))
 
         def finish(self, output):
             assert self.key not in output
@@ -119,7 +123,10 @@ class ValueDownsamplers(DownsamplersBase):
             self.sum = 0
 
         def update(self, datum):
-            self.sum += datum * datum
+            try:
+                self.sum += datum * datum
+            except TypeError:
+                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value for 'sum' downsampler."))
 
         def finish(self, output):
             assert self.key not in output
@@ -380,7 +387,7 @@ class DerivationOperators(object):
             # First ensure that we have a numeric value, as we can't do anything with
             # other values
             if not isinstance(value, (int, float)):
-                # TODO: Emit some kind of warning here
+                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value for 'sum' operator."))
                 return
 
             rounded_ts = self._stream.highest_granularity.round_timestamp(timestamp)
@@ -460,7 +467,7 @@ class DerivationOperators(object):
             # First ensure that we have a numeric value, as we can't do anything with
             # other values
             if not isinstance(value, (int, float)):
-                # TODO: Emit some kind of warning here
+                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value for 'derivative' operator."))
                 return
 
             if self._stream.derive_state is not None:
@@ -511,7 +518,7 @@ class DerivationOperators(object):
             # First ensure that we have a numeric value, as we can't do anything with
             # other values
             if not isinstance(value, (int, float)):
-                # TODO: Emit some kind of warning here
+                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value for 'counter_reset' operator."))
                 return
 
             if self._stream.derive_state is not None:
@@ -578,7 +585,7 @@ class DerivationOperators(object):
             # First ensure that we have a numeric value, as we can't do anything with
             # other values
             if not isinstance(value, (int, float)):
-                # TODO: Emit some kind of warning here
+                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value for 'counter_derivative' operator."))
                 return
 
             if name is None:
@@ -592,7 +599,8 @@ class DerivationOperators(object):
                         if self._max_value is not None:
                             vdelta = self._max_value - v1 + value
                         else:
-                            # TODO: Warning that we treated this as a reset even if the reset stream said nothing
+                            # Treat this as a reset since we lack the maximum value setting
+                            warnings.warn(exceptions.InvalidValueWarning("Assuming reset as maximum value is not set even when reset stream said nothing."))
                             vdelta = None
 
                     if vdelta is not None:
