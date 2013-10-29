@@ -1123,7 +1123,7 @@ class Backend(object):
                 if derived_stream.pending_backprocess:
                     continue
             except Stream.DoesNotExist:
-                # TODO: What to do in this case?
+                warnings.warn(exceptions.InternalInconsistencyWarning("Invalid stream reference to '%s' in contributes_to!" % stream_id))
                 continue
 
             derive_operator = DerivationOperators.get(descriptor.op)(self, derived_stream, **descriptor.args)

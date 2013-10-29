@@ -48,3 +48,7 @@ class DatastreamWarning(RuntimeWarning):
 
 class InvalidValueWarning(DatastreamWarning):
     pass
+
+
+class InternalInconsistencyWarning(DatastreamWarning):
+    pass
