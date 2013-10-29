@@ -111,12 +111,17 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]['v'], 42)
 
-        data = self.datastream.get_data(stream_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0))
+        data = self.datastream.get_data(
+            stream_id,
+            datastream.Granularity.Seconds,
+            datetime.datetime.utcfromtimestamp(0),
+        )
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]['v'], 42)
 
-        # TODO: Sometimes test fail with 4 datapoints here, why?
-        self.assertEqual(len(self._callback_points), 3)
+        # At least Seconds10 and Minutes granularities should be available because we artificially increased backend time
+        # See https://github.com/wlanslovenija/datastream/issues/12
+        self.assertTrue(len(self._callback_points) >= 3, len(self._callback_points))
         cb_stream_id, cb_granularity, cb_datapoint = self._callback_points[1]
         self.assertEqual(cb_stream_id, stream_id)
         self.assertEqual(cb_granularity, datastream.Granularity.Seconds10)
@@ -137,14 +142,25 @@ class BasicTest(MongoDBBasicTest):
         self.assertItemsEqual(data[0]['v'].keys(), value_downsamplers_keys)
         self.assertItemsEqual(data[0]['t'].keys(), time_downsamplers_keys)
         self.assertItemsEqual(data[0], cb_datapoint)
+        self.assertTrue(datastream.VALUE_DOWNSAMPLERS['count'] in data[0]['v'].keys())
 
-        data = self.datastream.get_data(stream_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0))
+        data = self.datastream.get_data(
+            stream_id,
+            datastream.Granularity.Minutes,
+            datetime.datetime.utcfromtimestamp(0),
+        )
         self.assertEqual(len(data), 1)
         self.assertItemsEqual(data[0]['v'].keys(), value_downsamplers_keys)
         self.assertItemsEqual(data[0]['t'].keys(), time_downsamplers_keys)
+        self.assertItemsEqual(data[0], cb_datapoint)
         self.assertTrue(datastream.VALUE_DOWNSAMPLERS['count'] in data[0]['v'].keys())
 
-        data = self.datastream.get_data(stream_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0), value_downsamplers=('count',))
+        data = self.datastream.get_data(
+            stream_id,
+            datastream.Granularity.Minutes,
+            datetime.datetime.utcfromtimestamp(0),
+            value_downsamplers=('count',),
+        )
         self.assertEqual(len(data), 1)
         self.assertItemsEqual(data[0]['v'].keys(), (datastream.VALUE_DOWNSAMPLERS['count'],))
         self.assertEqual(data[0]['v'][datastream.VALUE_DOWNSAMPLERS['count']], 1)
