@@ -624,7 +624,13 @@ class GranularityField(mongoengine.StringField):
         super(GranularityField, self).__init__(**kwargs)
 
     def to_python(self, value):
-        return getattr(api.Granularity, value)
+        try:
+            return getattr(api.Granularity, value)
+        except TypeError:
+            if issubclass(value, api.Granularity._Base):
+                return value
+            
+            raise
 
     def to_mongo(self, value):
         return value.__name__
@@ -904,13 +910,10 @@ class Backend(object):
                         src_stream = stream_dsc['stream']
                         src_stream.contributes_to[str(stream.id)] = ContributesToStreamDescriptor(
                             name=stream_dsc.get('name', None),
+                            granularity=stream_dsc.get('granularity', src_stream.highest_granularity),
                             op=stream.derived_from.op,
-                            args=stream.derived_from.args
+                            args=stream.derived_from.args,
                         )
-                        # TODO: This is not in the constructor call because of a MongoEngine bug that
-                        # calls to_python on the passed value even though the value is already a Python
-                        # object
-                        src_stream.contributes_to[str(stream.id)].granularity = stream_dsc.get('granularity', src_stream.highest_granularity)
                         src_stream.save()
                 except:
                     # Update has failed, we have to undo everything and remove this stream
