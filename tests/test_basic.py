@@ -1,4 +1,4 @@
-import datetime, time, unittest
+import datetime, time, unittest, warnings
 
 import pytz
 
@@ -168,9 +168,13 @@ class BasicTest(MongoDBBasicTest):
 
         streamA_id = self.datastream.ensure_stream([{'name': 'srcX'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
         streamB_id = self.datastream.ensure_stream([{'name': 'srcY'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+
+        with self.assertRaises(exceptions.InvalidOperatorArguments):
+            self.datastream.ensure_stream([{'name': 'derived'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+                derive_from=[streamA_id, streamB_id], derive_op='derivative')
         
         streamA = datastream.Stream(self.datastream.get_tags(streamA_id))
-        streamB = datastream.Stream(self.datastream.get_tags(streamA_id))
+        streamB = datastream.Stream(self.datastream.get_tags(streamB_id))
         self.assertEqual(hasattr(streamA, 'contributes_to'), False)
         self.assertEqual(hasattr(streamB, 'contributes_to'), False)
 
@@ -178,7 +182,7 @@ class BasicTest(MongoDBBasicTest):
             derive_from=[streamA_id, streamB_id], derive_op='sum')
 
         streamA = datastream.Stream(self.datastream.get_tags(streamA_id))
-        streamB = datastream.Stream(self.datastream.get_tags(streamA_id))
+        streamB = datastream.Stream(self.datastream.get_tags(streamB_id))
         stream = datastream.Stream(self.datastream.get_tags(stream_id))
 
         self.assertEqual(len(streamA.contributes_to), 1)
@@ -200,6 +204,10 @@ class BasicTest(MongoDBBasicTest):
         with self.assertRaises(exceptions.AppendToDerivedStreamNotAllowed):
             self.datastream.append(stream_id, 42)
 
+        # Test derived stream chaining
+        chained_stream_id = self.datastream.ensure_stream([{'name': 'chained'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=[streamA_id, another_stream_id], derive_op='sum')
+
         ts1 = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         self.assertEqual(self.datastream.append(streamA_id, 21, ts1)['datapoint']['t'], ts1)
         self.assertEqual(self.datastream.append(streamB_id, 21, ts1)['datapoint']['v'], 21)
@@ -220,9 +228,6 @@ class BasicTest(MongoDBBasicTest):
         self.datastream.append(streamB_id, 25, ts2)
         self.datastream.append(streamA_id, 25, ts2)
 
-        # Note the gap between the previous and the next point; the derivative operator
-        # must notice this and not compute a wrong derivative here
-
         ts2 = datetime.datetime(2000, 1, 1, 12, 0, 10, tzinfo=pytz.utc)
         self.datastream.append(streamA_id, 70, ts2)
         self.datastream.append(streamB_id, 42, ts2)
@@ -237,7 +242,151 @@ class BasicTest(MongoDBBasicTest):
 
         # Test derivative operator
         data = self.datastream.get_data(another_stream_id, self.datastream.Granularity.Seconds, start=ts1)
-        self.assertEqual([x['v'] for x in data], [4.0, 3.0, 4.0, -7.0, 4.0])
+        self.assertEqual([x['v'] for x in data], [4.0, 3.0, 4.0, -7.0, 7.5, 4.0])
+
+        # Test results of chained streams
+        data = self.datastream.get_data(chained_stream_id, self.datastream.Granularity.Seconds, start=ts1)
+        self.assertEqual([x['v'] for x in data], [29.0, 31.0, 36.0, 18.0, 77.5, 78.0])
+
+        # Test named source streams
+        streamA_id = self.datastream.ensure_stream([{'name': 'fooA'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        streamB_id = self.datastream.ensure_stream([{'name': 'fooB'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        stream_id = self.datastream.ensure_stream([{'name': 'derived3'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=[
+                {'name': 'Stream A', 'stream': streamA_id},
+                {'name': 'Stream B', 'stream': streamB_id},
+            ],
+            derive_op='sum'
+        )
+
+        ts1 = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        self.datastream.append(streamA_id, 21, ts1)
+        self.datastream.append(streamB_id, 21, ts1)
+
+        ts2 = datetime.datetime(2000, 1, 1, 12, 0, 1, tzinfo=pytz.utc)
+        self.datastream.append(streamA_id, 25, ts2)
+        self.datastream.append(streamB_id, 25, ts2)
+
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts1)
+        self.assertEqual([x['v'] for x in data], [42, 50])
+
+        # Test invalid granularity specification
+        streamC_id = self.datastream.ensure_stream([{'name': 'srcZ'}], [], self.value_downsamplers, datastream.Granularity.Minutes)
+        with self.assertRaises(exceptions.IncompatibleGranularities):
+            self.datastream.ensure_stream([{'name': 'derived4'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+                derive_from=[
+                    {'name': 'Stream A', 'stream': streamA_id},
+                    {'name': 'Stream C', 'stream': streamC_id, 'granularity': self.datastream.Granularity.Seconds},
+                ],
+                derive_op='sum'
+            )
+
+        # Test sum for different granularities
+        streamA_id = self.datastream.ensure_stream([{'name': 'gA'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        streamB_id = self.datastream.ensure_stream([{'name': 'gB'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        stream_id = self.datastream.ensure_stream([{'name': 'sumdifg'}], [], self.value_downsamplers, datastream.Granularity.Seconds10,
+            derive_from=[
+                {'name': 'Stream A', 'stream': streamA_id, 'granularity': datastream.Granularity.Seconds10},
+                {'name': 'Stream B', 'stream': streamB_id, 'granularity': datastream.Granularity.Seconds10},
+            ],
+            derive_op='sum'
+        )
+
+        for i in xrange(32):
+            ts = datetime.datetime(2000, 1, 1, 12, 0, i, tzinfo=pytz.utc)
+            self.datastream.append(streamA_id, 5, ts)
+            self.datastream.append(streamB_id, 5, ts)
+
+        # Before downsampling, nothing should be present in derived stream
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
+        self.assertEqual(len(data), 0)
+
+        x = self.datastream.downsample_streams(until=ts + datetime.timedelta(hours=10))
+
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
+        self.assertEqual([x['v'] for x in data], [10.0, 10.0, 10.0, 10.0])
+
+        # Test counter reset operator
+        streamA_id = self.datastream.ensure_stream([{'name': 'crA'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        reset_stream_id = self.datastream.ensure_stream([{'name': 'reset'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=streamA_id, derive_op='counter_reset')
+
+        for i, v in enumerate([10, 23, 28, 44, 2, 17, 90, 30, 2]):
+            ts = datetime.datetime(2000, 1, 1, 12, 0, i, tzinfo=pytz.utc)
+            self.datastream.append(streamA_id, v, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        data = self.datastream.get_data(reset_stream_id, self.datastream.Granularity.Seconds, start=ts)
+        self.assertEqual([x['v'] for x in data], [1, 1, 1])
+
+        # Test counter derivative operator
+        uptime_stream_id = self.datastream.ensure_stream([{'name': 'up'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        reset_stream_id = self.datastream.ensure_stream([{'name': 'rsup'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=uptime_stream_id, derive_op='counter_reset')
+        data_stream_id = self.datastream.ensure_stream([{'name': 'data'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        stream_id = self.datastream.ensure_stream([{'name': 'rate'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=[
+                {'name': 'reset', 'stream': reset_stream_id},
+                {'stream': data_stream_id},
+            ],
+            derive_op='counter_derivative',
+            derive_args={'max_value': 256}
+        )
+
+        uptime = [10, 23, 28, 44, 2, 17, 90, 30, 2]
+        data   = [ 5, 12,  7, 25, 7, 18, 33, 40, 5]
+        for i, (u, v) in enumerate(zip(uptime, data)):
+            ts = datetime.datetime(2000, 1, 1, 12, 0, i, tzinfo=pytz.utc)
+            self.datastream.append(uptime_stream_id, u, ts)
+            self.datastream.append(data_stream_id, v, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
+        self.assertEqual([x['v'] for x in data], [7.0, 251.0, 18.0, 11.0, 15.0])
+
+        # Test stream backprocessing with the above uptime and data streams
+        reset_stream_id = self.datastream.ensure_stream([{'name': 'rsup2'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=uptime_stream_id, derive_op='counter_reset')
+        stream_id = self.datastream.ensure_stream([{'name': 'rate2'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=[
+                {'name': 'reset', 'stream': reset_stream_id},
+                {'stream': data_stream_id},
+            ],
+            derive_op='counter_derivative',
+            derive_args={'max_value': 256}
+        )
+
+        stream = datastream.Stream(self.datastream.get_tags(stream_id))
+        self.assertEqual(stream.pending_backprocess, True)
+
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
+        self.assertEqual(len(data), 0)
+
+        self.datastream.backprocess_streams()
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
+        self.assertEqual([x['v'] for x in data], [7.0, 251.0, 18.0, 11.0, 15.0])
+
+        stream = datastream.Stream(self.datastream.get_tags(stream_id))
+        self.assertEqual(stream.pending_backprocess, False)
+
+    def test_derived_stream_warnings(self):
+        streamA_id = self.datastream.ensure_stream([{'name': 'sA'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        streamB_id = self.datastream.ensure_stream([{'name': 'sB'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+        stream_id = self.datastream.ensure_stream([{'name': 'dA'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=[streamA_id, streamB_id], derive_op='sum')
+        stream_id = self.datastream.ensure_stream([{'name': 'dB'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=[streamA_id], derive_op='derivative')
+
+        # Test warnings for sum/derivative operators
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 1, tzinfo=pytz.utc)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            self.datastream.append(streamA_id, "foo", ts)
+            self.datastream.append(streamB_id, "bar", ts)
+
+            self.assertEqual(len(w), 3)
+            self.assertEqual(all([x.category == exceptions.InvalidValueWarning for x in w]), True)
 
     def test_timestamp_ranges(self):
         stream_id = self.datastream.ensure_stream([{'name': 'foopub'}], [], self.value_downsamplers, datastream.Granularity.Seconds)

@@ -40,3 +40,15 @@ class AppendToDerivedStreamNotAllowed(DatastreamException, ValueError):
 
 class InvalidOperatorArguments(DatastreamException, ValueError):
     pass
+
+
+class DatastreamWarning(RuntimeWarning):
+    pass
+
+
+class InvalidValueWarning(DatastreamWarning):
+    pass
+
+
+class InternalInconsistencyWarning(DatastreamWarning):
+    pass

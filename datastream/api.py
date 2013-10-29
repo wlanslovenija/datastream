@@ -175,6 +175,12 @@ class Stream(object):
             except (ValueError, KeyError, TypeError):
                 pass
 
+            try:
+                self.pending_backprocess = bool(tag['pending_backprocess'])
+                continue
+            except (ValueError, KeyError, TypeError):
+                pass
+
             tags.append(tag)
 
         self.tags = tags
@@ -187,6 +193,8 @@ class Stream(object):
             raise ValueError("Supplied tags are missing 'time_downsamplers'.")
         if not hasattr(self, 'highest_granularity'):
             raise ValueError("Supplied tags are missing 'highest_granularity'.")
+        if not hasattr(self, 'pending_backprocess'):
+            raise ValueError("Supplied tags are missing 'pending_backprocess'.")
 
 RESERVED_TAGS = (
     'stream_id',
@@ -195,6 +203,7 @@ RESERVED_TAGS = (
     'highest_granularity',
     'derived_from',
     'contributes_to',
+    'pending_backprocess',
 )
 
 VALUE_DOWNSAMPLERS = {
@@ -228,6 +237,8 @@ TIME_DOWNSAMPLERS = {
 DERIVE_OPERATORS = {
     'sum': 'SUM', # sum of multiple streams
     'derivative': 'DERIVATIVE', # derivative of a stream
+    'counter_reset': 'COUNTER_RESET', # generates a counter reset stream
+    'counter_derivative': 'COUNTER_DERIVATIVE', # derivative of a monotonically increasing counter stream
 }
 
 
@@ -438,6 +449,15 @@ class Datastream(object):
             until = until.replace(tzinfo=pytz.utc)
 
         return self.backend.downsample_streams(query_tags, until)
+
+    def backprocess_streams(self, query_tags=None):
+        """
+        Requests the backend to backprocess any derived streams.
+
+        :param query_tags: Tags that should be matched to streams
+        """
+
+        return self.backend.backprocess_streams(query_tags)
 
     def delete_streams(self, query_tags=None):
         """
