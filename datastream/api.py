@@ -176,7 +176,7 @@ class Stream(object):
                 pass
 
             try:
-                self.pending_backprocess = tag['pending_backprocess']
+                self.pending_backprocess = bool(tag['pending_backprocess'])
                 continue
             except (ValueError, KeyError, TypeError):
                 pass
