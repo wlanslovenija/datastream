@@ -98,7 +98,10 @@ class BasicTest(MongoDBBasicTest):
         self.datastream.backend._time_offset += datetime.timedelta(minutes=1)
 
         new_datapoints = self.datastream.downsample_streams()
-        self.assertEquals(len(new_datapoints), 2)
+
+        # At least Seconds10 and Minutes granularities should be available because we artificially increased backend time
+        # See https://github.com/wlanslovenija/datastream/issues/12
+        self.assertTrue(len(new_datapoints) >= 2)
         self.assertEquals(new_datapoints[0]['datapoint']['v'], {'c': 1, 'd': 0, 'm': 42.0, 'l': 42, 'q': 1764, 's': 42, 'u': 42})
         self.assertEquals(new_datapoints[1]['datapoint']['v'], {'c': 1, 'd': 0, 'm': 42.0, 'l': 42, 'q': 1764, 's': 42, 'u': 42})
 
