@@ -1,4 +1,7 @@
-import datetime, time, unittest, warnings
+import datetime
+import time
+import unittest
+import warnings
 
 import pytz
 
@@ -8,6 +11,7 @@ import datastream
 from datastream import exceptions
 
 from datastream.backends import mongodb
+
 
 class MongoDBBasicTest(unittest.TestCase):
     database_name = 'test_database'
@@ -29,6 +33,7 @@ class MongoDBBasicTest(unittest.TestCase):
             if collection == 'system.indexes':
                 continue
             db.drop_collection(collection)
+
 
 #@unittest.skip("performing stress test")
 class BasicTest(MongoDBBasicTest):
@@ -173,32 +178,68 @@ class BasicTest(MongoDBBasicTest):
         streamB_id = self.datastream.ensure_stream([{'name': 'srcB'}], [], self.value_downsamplers, datastream.Granularity.Minutes)
 
         with self.assertRaises(exceptions.IncompatibleGranularities):
-            self.datastream.ensure_stream([{'name': 'derived'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
-                derive_from=[streamA_id, streamB_id], derive_op='sum')
+            self.datastream.ensure_stream(
+                [{'name': 'derived'}],
+                [],
+                self.value_downsamplers,
+                datastream.Granularity.Seconds,
+                derive_from=[streamA_id, streamB_id],
+                derive_op='sum',
+            )
         with self.assertRaises(exceptions.IncompatibleGranularities):
-            self.datastream.ensure_stream([{'name': 'derived'}], [], self.value_downsamplers, datastream.Granularity.Minutes,
-                derive_from=[streamA_id, streamB_id], derive_op='sum')
+            self.datastream.ensure_stream(
+                [{'name': 'derived'}],
+                [],
+                self.value_downsamplers,
+                datastream.Granularity.Minutes,
+                derive_from=[streamA_id, streamB_id],
+                derive_op='sum',
+            )
         with self.assertRaises(exceptions.UnsupportedDeriveOperator):
-            self.datastream.ensure_stream([{'name': 'derived'}], [], self.value_downsamplers, datastream.Granularity.Minutes,
-                derive_from=[streamA_id, streamB_id], derive_op='foobar')
+            self.datastream.ensure_stream(
+                [{'name': 'derived'}],
+                [],
+                self.value_downsamplers,
+                datastream.Granularity.Minutes,
+                derive_from=[streamA_id, streamB_id],
+                derive_op='foobar',
+            )
         with self.assertRaises(exceptions.StreamNotFound):
-            self.datastream.ensure_stream([{'name': 'derived'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
-                derive_from=[streamA_id, '00000000-0000-0000-0000-000000000000'], derive_op='sum')
+            self.datastream.ensure_stream(
+                [{'name': 'derived'}],
+                [],
+                self.value_downsamplers,
+                datastream.Granularity.Seconds,
+                derive_from=[streamA_id, '00000000-0000-0000-0000-000000000000'],
+                derive_op='sum',
+            )
 
         streamA_id = self.datastream.ensure_stream([{'name': 'srcX'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
         streamB_id = self.datastream.ensure_stream([{'name': 'srcY'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
 
         with self.assertRaises(exceptions.InvalidOperatorArguments):
-            self.datastream.ensure_stream([{'name': 'derived'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
-                derive_from=[streamA_id, streamB_id], derive_op='derivative')
-        
+            self.datastream.ensure_stream(
+                [{'name': 'derived'}],
+                [],
+                self.value_downsamplers,
+                datastream.Granularity.Seconds,
+                derive_from=[streamA_id, streamB_id],
+                derive_op='derivative',
+            )
+
         streamA = datastream.Stream(self.datastream.get_tags(streamA_id))
         streamB = datastream.Stream(self.datastream.get_tags(streamB_id))
         self.assertEqual(hasattr(streamA, 'contributes_to'), False)
         self.assertEqual(hasattr(streamB, 'contributes_to'), False)
 
-        stream_id = self.datastream.ensure_stream([{'name': 'derived'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
-            derive_from=[streamA_id, streamB_id], derive_op='sum')
+        stream_id = self.datastream.ensure_stream(
+            [{'name': 'derived'}],
+            [],
+            self.value_downsamplers,
+            datastream.Granularity.Seconds,
+            derive_from=[streamA_id, streamB_id],
+            derive_op='sum',
+        )
 
         streamA = datastream.Stream(self.datastream.get_tags(streamA_id))
         streamB = datastream.Stream(self.datastream.get_tags(streamB_id))
@@ -212,8 +253,14 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(hasattr(streamB, 'derived_from'), False)
         self.assertIsNotNone(stream.derived_from)
 
-        another_stream_id = self.datastream.ensure_stream([{'name': 'derived2'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
-            derive_from=streamA_id, derive_op='derivative')
+        another_stream_id = self.datastream.ensure_stream(
+            [{'name': 'derived2'}],
+            [],
+            self.value_downsamplers,
+            datastream.Granularity.Seconds,
+            derive_from=streamA_id,
+            derive_op='derivative',
+        )
 
         streamA = datastream.Stream(self.datastream.get_tags(streamA_id))
         streamB = datastream.Stream(self.datastream.get_tags(streamB_id))
@@ -224,8 +271,14 @@ class BasicTest(MongoDBBasicTest):
             self.datastream.append(stream_id, 42)
 
         # Test derived stream chaining
-        chained_stream_id = self.datastream.ensure_stream([{'name': 'chained'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
-            derive_from=[streamA_id, another_stream_id], derive_op='sum')
+        chained_stream_id = self.datastream.ensure_stream(
+            [{'name': 'chained'}],
+            [],
+            self.value_downsamplers,
+            datastream.Granularity.Seconds,
+            derive_from=[streamA_id, another_stream_id],
+            derive_op='sum',
+        )
 
         ts1 = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         self.assertEqual(self.datastream.append(streamA_id, 21, ts1)['datapoint']['t'], ts1)
@@ -270,12 +323,16 @@ class BasicTest(MongoDBBasicTest):
         # Test named source streams
         streamA_id = self.datastream.ensure_stream([{'name': 'fooA'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
         streamB_id = self.datastream.ensure_stream([{'name': 'fooB'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
-        stream_id = self.datastream.ensure_stream([{'name': 'derived3'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+        stream_id = self.datastream.ensure_stream(
+            [{'name': 'derived3'}],
+            [],
+            self.value_downsamplers,
+            datastream.Granularity.Seconds,
             derive_from=[
                 {'name': 'Stream A', 'stream': streamA_id},
                 {'name': 'Stream B', 'stream': streamB_id},
             ],
-            derive_op='sum'
+            derive_op='sum',
         )
 
         ts1 = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
@@ -292,23 +349,31 @@ class BasicTest(MongoDBBasicTest):
         # Test invalid granularity specification
         streamC_id = self.datastream.ensure_stream([{'name': 'srcZ'}], [], self.value_downsamplers, datastream.Granularity.Minutes)
         with self.assertRaises(exceptions.IncompatibleGranularities):
-            self.datastream.ensure_stream([{'name': 'derived4'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+            self.datastream.ensure_stream(
+                [{'name': 'derived4'}],
+                [],
+                self.value_downsamplers,
+                datastream.Granularity.Seconds,
                 derive_from=[
                     {'name': 'Stream A', 'stream': streamA_id},
                     {'name': 'Stream C', 'stream': streamC_id, 'granularity': self.datastream.Granularity.Seconds},
                 ],
-                derive_op='sum'
+                derive_op='sum',
             )
 
         # Test sum for different granularities
         streamA_id = self.datastream.ensure_stream([{'name': 'gA'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
         streamB_id = self.datastream.ensure_stream([{'name': 'gB'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
-        stream_id = self.datastream.ensure_stream([{'name': 'sumdifg'}], [], self.value_downsamplers, datastream.Granularity.Seconds10,
+        stream_id = self.datastream.ensure_stream(
+            [{'name': 'sumdifg'}],
+            [],
+            self.value_downsamplers,
+            datastream.Granularity.Seconds10,
             derive_from=[
                 {'name': 'Stream A', 'stream': streamA_id, 'granularity': datastream.Granularity.Seconds10},
                 {'name': 'Stream B', 'stream': streamB_id, 'granularity': datastream.Granularity.Seconds10},
             ],
-            derive_op='sum'
+            derive_op='sum',
         )
 
         for i in xrange(32):
@@ -328,8 +393,14 @@ class BasicTest(MongoDBBasicTest):
 
         # Test counter reset operator
         streamA_id = self.datastream.ensure_stream([{'name': 'crA'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
-        reset_stream_id = self.datastream.ensure_stream([{'name': 'reset'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
-            derive_from=streamA_id, derive_op='counter_reset')
+        reset_stream_id = self.datastream.ensure_stream(
+            [{'name': 'reset'}],
+            [],
+            self.value_downsamplers,
+            datastream.Granularity.Seconds,
+            derive_from=streamA_id,
+            derive_op='counter_reset',
+        )
 
         for i, v in enumerate([10, 23, 28, 44, 2, 17, 90, 30, 2]):
             ts = datetime.datetime(2000, 1, 1, 12, 0, i, tzinfo=pytz.utc)
@@ -341,20 +412,29 @@ class BasicTest(MongoDBBasicTest):
 
         # Test counter derivative operator
         uptime_stream_id = self.datastream.ensure_stream([{'name': 'up'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
-        reset_stream_id = self.datastream.ensure_stream([{'name': 'rsup'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
-            derive_from=uptime_stream_id, derive_op='counter_reset')
+        reset_stream_id = self.datastream.ensure_stream(
+            [{'name': 'rsup'}],
+            [],
+            self.value_downsamplers, datastream.Granularity.Seconds,
+            derive_from=uptime_stream_id,
+            derive_op='counter_reset',
+        )
         data_stream_id = self.datastream.ensure_stream([{'name': 'data'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
-        stream_id = self.datastream.ensure_stream([{'name': 'rate'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+        stream_id = self.datastream.ensure_stream(
+            [{'name': 'rate'}],
+            [],
+            self.value_downsamplers,
+            datastream.Granularity.Seconds,
             derive_from=[
                 {'name': 'reset', 'stream': reset_stream_id},
                 {'stream': data_stream_id},
             ],
             derive_op='counter_derivative',
-            derive_args={'max_value': 256}
+            derive_args={'max_value': 256},
         )
 
         uptime = [10, 23, 28, 44, 2, 17, 90, 30, 2]
-        data   = [ 5, 12,  7, 25, 7, 18, 33, 40, 5]
+        data = [5, 12, 7, 25, 7, 18, 33, 40, 5]
         for i, (u, v) in enumerate(zip(uptime, data)):
             ts = datetime.datetime(2000, 1, 1, 12, 0, i, tzinfo=pytz.utc)
             self.datastream.append(uptime_stream_id, u, ts)
@@ -365,15 +445,25 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual([x['v'] for x in data], [7.0, 251.0, 18.0, 11.0, 15.0])
 
         # Test stream backprocessing with the above uptime and data streams
-        reset_stream_id = self.datastream.ensure_stream([{'name': 'rsup2'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
-            derive_from=uptime_stream_id, derive_op='counter_reset')
-        stream_id = self.datastream.ensure_stream([{'name': 'rate2'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
+        reset_stream_id = self.datastream.ensure_stream(
+            [{'name': 'rsup2'}],
+            [],
+            self.value_downsamplers,
+            datastream.Granularity.Seconds,
+            derive_from=uptime_stream_id,
+            derive_op='counter_reset',
+        )
+        stream_id = self.datastream.ensure_stream(
+            [{'name': 'rate2'}],
+            [],
+            self.value_downsamplers,
+            datastream.Granularity.Seconds,
             derive_from=[
                 {'name': 'reset', 'stream': reset_stream_id},
                 {'stream': data_stream_id},
             ],
             derive_op='counter_derivative',
-            derive_args={'max_value': 256}
+            derive_args={'max_value': 256},
         )
 
         stream = datastream.Stream(self.datastream.get_tags(stream_id))
@@ -392,10 +482,22 @@ class BasicTest(MongoDBBasicTest):
     def test_derived_stream_warnings(self):
         streamA_id = self.datastream.ensure_stream([{'name': 'sA'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
         streamB_id = self.datastream.ensure_stream([{'name': 'sB'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
-        stream_id = self.datastream.ensure_stream([{'name': 'dA'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
-            derive_from=[streamA_id, streamB_id], derive_op='sum')
-        stream_id = self.datastream.ensure_stream([{'name': 'dB'}], [], self.value_downsamplers, datastream.Granularity.Seconds,
-            derive_from=[streamA_id], derive_op='derivative')
+        stream_id = self.datastream.ensure_stream(
+            [{'name': 'dA'}],
+            [],
+            self.value_downsamplers,
+            datastream.Granularity.Seconds,
+            derive_from=[streamA_id, streamB_id],
+            derive_op='sum',
+        )
+        stream_id = self.datastream.ensure_stream(
+            [{'name': 'dB'}],
+            [],
+            self.value_downsamplers,
+            datastream.Granularity.Seconds,
+            derive_from=[streamA_id],
+            derive_op='derivative',
+        )
 
         # Test warnings for sum/derivative operators
         ts = datetime.datetime(2000, 1, 1, 12, 0, 1, tzinfo=pytz.utc)
@@ -793,7 +895,8 @@ class BasicTest(MongoDBBasicTest):
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Days, start=datetime.datetime.min)
         self.assertEqual(len(data), 0)
 
-@unittest.skip("stress test")
+
+@unittest.skip('stress test')
 class StressTest(MongoDBBasicTest):
     def test_stress(self):
         stream_id = self.datastream.ensure_stream(

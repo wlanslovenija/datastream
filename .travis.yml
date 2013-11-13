@@ -15,7 +15,7 @@ install:
  - pip install pylint --use-mirrors
  - python setup.py install
 before_script:
- - pep8 datastream
- - pylint datastream || true
+ - pep8 datastream tests docs
+ - pylint datastream tests docs || true
 script:
  - python -Wall setup.py test
