@@ -244,7 +244,8 @@ DERIVE_OPERATORS = {
 
 class Datapoints(object):
     def batch_size(self, batch_size):
-        raise NotImplementedError
+        # Ignore by default, this is just for optimization
+        return
 
     def count(self):
         raise NotImplementedError
