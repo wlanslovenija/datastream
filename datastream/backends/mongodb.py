@@ -641,9 +641,10 @@ class GranularityField(mongoengine.StringField):
 
 
 class Datapoints(api.Datapoints):
-    def __init__(self, stream, cursor=None):
+    def __init__(self, stream, cursor=None, empty_time=False):
         self.stream = stream
         self.cursor = cursor
+        self.empty_time = empty_time
 
     def batch_size(self, batch_size):
         self.cursor.batch_size(batch_size)
@@ -659,16 +660,16 @@ class Datapoints(api.Datapoints):
             return
 
         for datapoint in self.cursor:
-            yield self.stream._format_datapoint(datapoint)
+            yield self.stream._format_datapoint(datapoint, self.empty_time)
 
     def __getitem__(self, key):
         if self.cursor is None:
             raise IndexError
 
         if isinstance(key, slice):
-            return Datapoints(self.stream, cursor=self.cursor.__getitem__(key))
+            return Datapoints(self.stream, cursor=self.cursor.__getitem__(key), empty_time=self.empty_time)
         elif isinstance(key, int):
-            return self.stream._format_datapoint(self.cursor.__getitem__(key))
+            return self.stream._format_datapoint(self.cursor.__getitem__(key), self.empty_time)
         else:
             raise AttributeError
 
@@ -1214,7 +1215,7 @@ class Backend(object):
 
         return self._append(stream, value, timestamp, check_timestamp)
 
-    def _format_datapoint(self, datapoint):
+    def _format_datapoint(self, datapoint, empty_time=False):
         """
         Formats a datapoint so it is suitable for user output.
 
@@ -1222,10 +1223,15 @@ class Backend(object):
         :return: A properly formatted datapoint
         """
 
-        return {
-            't': datapoint.get('t', datapoint['_id'].generation_time),
-            'v': datapoint['v']
-        }
+        result = {}
+
+        if not empty_time:
+            result['t'] = datapoint.get('t', datapoint['_id'].generation_time)
+
+        if 'v' in datapoint:
+            result['v'] = datapoint['v']
+
+        return result
 
     def get_data(self, stream_id, granularity, start=None, end=None, start_exclusive=None, end_exclusive=None, reverse=False, value_downsamplers=None, time_downsamplers=None):
         """
@@ -1259,7 +1265,9 @@ class Backend(object):
             value_downsamplers = None
             time_downsamplers = None
 
-        downsamplers = []
+        # We explicitly set _id so that if both value_downsamplers and time_downsamplers we do not return everything
+        downsamplers = ['_id']
+        empty_time = False
 
         if value_downsamplers is not None:
             value_downsamplers = set(value_downsamplers)
@@ -1268,6 +1276,9 @@ class Backend(object):
             assert value_downsamplers <= self.value_downsamplers, value_downsamplers - self.value_downsamplers
 
             downsamplers += ['v.%s' % api.VALUE_DOWNSAMPLERS[d] for d in value_downsamplers]
+        else:
+            # Else we want full 'v'
+            downsamplers += ['v']
 
         if time_downsamplers is not None:
             time_downsamplers = set(time_downsamplers)
@@ -1276,6 +1287,11 @@ class Backend(object):
             assert time_downsamplers <= self.time_downsamplers, time_downsamplers - self.time_downsamplers
 
             downsamplers += ['t.%s' % api.TIME_DOWNSAMPLERS[d] for d in time_downsamplers]
+
+            empty_time = len(time_downsamplers) == 0
+        else:
+            # Else we want full 't'
+            downsamplers += ['t']
 
         if downsamplers == []:
             downsamplers = None
@@ -1346,7 +1362,7 @@ class Backend(object):
             '_id': time_query,
         }, downsamplers).sort('_id', -1 if reverse else 1)
 
-        return Datapoints(self, datapoints)
+        return Datapoints(self, datapoints, empty_time)
 
     def delete_streams(self, query_tags=None):
         """

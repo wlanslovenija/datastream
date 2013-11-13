@@ -200,6 +200,37 @@ class BasicTest(MongoDBBasicTest):
         self.assertItemsEqual(data[0]['t'].keys(), (datastream.TIME_DOWNSAMPLERS['first'],))
         self.assertEqual(data[0]['t'][datastream.TIME_DOWNSAMPLERS['first']], datapoint['t'][datastream.TIME_DOWNSAMPLERS['first']])
 
+        data = self.datastream.get_data(
+            stream_id,
+            datastream.Granularity.Minutes,
+            datetime.datetime.utcfromtimestamp(0),
+            value_downsamplers=(),
+        )
+        self.assertEqual(len(data), 1)
+        self.assertFalse('v' in data[0], data[0].get('v', None))
+        self.assertEqual(data[0]['t'], datapoint['t'])
+
+        data = self.datastream.get_data(
+            stream_id,
+            datastream.Granularity.Minutes,
+            datetime.datetime.utcfromtimestamp(0),
+            time_downsamplers=(),
+        )
+        self.assertEqual(len(data), 1)
+        self.assertItemsEqual(data[0]['v'], datapoint['v'])
+        self.assertFalse('t' in data[0], data[0].get('t', None))
+
+        data = self.datastream.get_data(
+            stream_id,
+            datastream.Granularity.Minutes,
+            datetime.datetime.utcfromtimestamp(0),
+            value_downsamplers=(),
+            time_downsamplers=(),
+        )
+        self.assertEqual(len(data), 1)
+        self.assertFalse('v' in data[0], data[0].get('v', None))
+        self.assertFalse('t' in data[0], data[0].get('t', None))
+
     def test_derived_streams(self):
         streamA_id = self.datastream.ensure_stream([{'name': 'srcA'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
         streamB_id = self.datastream.ensure_stream([{'name': 'srcB'}], [], self.value_downsamplers, datastream.Granularity.Minutes)
