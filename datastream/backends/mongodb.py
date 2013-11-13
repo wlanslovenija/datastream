@@ -1220,6 +1220,7 @@ class Backend(object):
         Formats a datapoint so it is suitable for user output.
 
         :param datapoint: Raw datapoint from MongoDB database
+        :param empty_time: Should there be not time value in the output? (default: false)
         :return: A properly formatted datapoint
         """
 
