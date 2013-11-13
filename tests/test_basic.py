@@ -163,6 +163,8 @@ class BasicTest(MongoDBBasicTest):
         self.assertItemsEqual(data[0], cb_datapoint)
         self.assertTrue(datastream.VALUE_DOWNSAMPLERS['count'] in data[0]['v'].keys())
 
+        datapoint = data[0]
+
         data = self.datastream.get_data(
             stream_id,
             datastream.Granularity.Minutes,
@@ -171,7 +173,32 @@ class BasicTest(MongoDBBasicTest):
         )
         self.assertEqual(len(data), 1)
         self.assertItemsEqual(data[0]['v'].keys(), (datastream.VALUE_DOWNSAMPLERS['count'],))
-        self.assertEqual(data[0]['v'][datastream.VALUE_DOWNSAMPLERS['count']], 1)
+        self.assertEqual(data[0]['v'][datastream.VALUE_DOWNSAMPLERS['count']], datapoint['v'][datastream.VALUE_DOWNSAMPLERS['count']])
+        self.assertEqual(data[0]['t'], datapoint['t'])
+
+        data = self.datastream.get_data(
+            stream_id,
+            datastream.Granularity.Minutes,
+            datetime.datetime.utcfromtimestamp(0),
+            time_downsamplers=('first',),
+        )
+        self.assertEqual(len(data), 1)
+        self.assertItemsEqual(data[0]['v'], datapoint['v'])
+        self.assertItemsEqual(data[0]['t'].keys(), (datastream.TIME_DOWNSAMPLERS['first'],))
+        self.assertEqual(data[0]['t'][datastream.TIME_DOWNSAMPLERS['first']], datapoint['t'][datastream.TIME_DOWNSAMPLERS['first']])
+
+        data = self.datastream.get_data(
+            stream_id,
+            datastream.Granularity.Minutes,
+            datetime.datetime.utcfromtimestamp(0),
+            value_downsamplers=('count',),
+            time_downsamplers=('first',),
+        )
+        self.assertEqual(len(data), 1)
+        self.assertItemsEqual(data[0]['v'].keys(), (datastream.VALUE_DOWNSAMPLERS['count'],))
+        self.assertEqual(data[0]['v'][datastream.VALUE_DOWNSAMPLERS['count']], datapoint['v'][datastream.VALUE_DOWNSAMPLERS['count']])
+        self.assertItemsEqual(data[0]['t'].keys(), (datastream.TIME_DOWNSAMPLERS['first'],))
+        self.assertEqual(data[0]['t'][datastream.TIME_DOWNSAMPLERS['first']], datapoint['t'][datastream.TIME_DOWNSAMPLERS['first']])
 
     def test_derived_streams(self):
         streamA_id = self.datastream.ensure_stream([{'name': 'srcA'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
