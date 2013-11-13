@@ -1,7 +1,5 @@
 language: python
-python:
- - 2.6
- - 2.7
+python: 2.7
 env:
  - PYMONGO_VERSION="==2.2.1" MONGOENGINE_VERSION="==0.6.20"
  - PYMONGO_VERSION="==2.2.1" MONGOENGINE_VERSION=">=0.6.20,<=0.8.1"
