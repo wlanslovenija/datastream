@@ -14,6 +14,10 @@ class InconsistentStreamConfiguration(DatastreamException):
     pass
 
 
+class OutstandingDependenciesError(DatastreamException):
+    pass
+
+
 class UnsupportedDownsampler(DatastreamException, ValueError):
     pass
 

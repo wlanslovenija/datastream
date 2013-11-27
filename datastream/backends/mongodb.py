@@ -1409,15 +1409,29 @@ class Backend(object):
         :param query_tags: Tags that should be matched to streams
         """
 
+        db = mongoengine.connection.get_db(DATABASE_ALIAS)
         if query_tags is None:
-            db = mongoengine.connection.get_db(DATABASE_ALIAS)
             for granularity in api.Granularity.values:
                 collection = getattr(db.datapoints, granularity.name)
                 collection.drop()
             db.streams.drop()
         else:
-            # TODO: Implement
-            raise NotImplementedError
+            for stream in self._get_stream_queryset(query_tags):
+                if stream.contributes_to:
+                    raise exceptions.OutstandingDependenciesError(
+                        "Unable to remove stream as derived streams depend on it"
+                    )
+
+                if stream.derived_from:
+                    # Remove dependencies from all source streams
+                    Stream.objects.filter(id__in=stream.derived_from.stream_ids).update(
+                        **{('unset__contributes_to__%s' % stream.id): ''}
+                    )
+
+                stream.delete()
+                for granularity in api.Granularity.values:
+                    collection = getattr(db.datapoints, granularity.name)
+                    collection.remove({'m': stream.id})
 
     def _last_timestamp(self, stream=None):
         """

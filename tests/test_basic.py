@@ -238,6 +238,11 @@ class BasicTest(MongoDBBasicTest):
         self.assertFalse('v' in data[0], data[0].get('v', None))
         self.assertFalse('t' in data[0], data[0].get('t', None))
 
+        # Test stream removal
+        self.datastream.delete_streams(query_tags)
+        with self.assertRaises(exceptions.StreamNotFound):
+            self.datastream.get_data(stream_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0))
+
     def test_derived_streams(self):
         streamA_id = self.datastream.ensure_stream([{'name': 'srcA'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
         streamB_id = self.datastream.ensure_stream([{'name': 'srcB'}], [], self.value_downsamplers, datastream.Granularity.Minutes)
@@ -565,6 +570,21 @@ class BasicTest(MongoDBBasicTest):
 
         stream = datastream.Stream(self.datastream.get_tags(stream_id))
         self.assertEqual(stream.pending_backprocess, False)
+
+        # Test derived stream removal
+        with self.assertRaises(exceptions.OutstandingDependenciesError):
+            self.datastream.delete_streams([{'name': 'up'}])
+        with self.assertRaises(exceptions.OutstandingDependenciesError):
+            self.datastream.delete_streams([{'name': 'data'}])
+        with self.assertRaises(exceptions.OutstandingDependenciesError):
+            self.datastream.delete_streams([{'name': 'rsup'}])
+
+        self.datastream.delete_streams([{'name': 'rate2'}])
+        self.datastream.delete_streams([{'name': 'rsup2'}])
+        self.datastream.delete_streams([{'name': 'rate'}])
+        self.datastream.delete_streams([{'name': 'rsup'}])
+        self.datastream.delete_streams([{'name': 'data'}])
+        self.datastream.delete_streams([{'name': 'up'}])
 
     def test_derived_stream_warnings(self):
         streamA_id = self.datastream.ensure_stream([{'name': 'sA'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
