@@ -828,6 +828,11 @@ class Backend(object):
 
         try:
             stream = Stream.objects.get(tags__all=query_tags)
+
+            # If a stream already exists and the tags have changed, we update them
+            if tags != stream.tags:
+                stream.tags = tags
+                stream.save()
         except Stream.DoesNotExist:
             # Create a new stream
             stream = Stream()

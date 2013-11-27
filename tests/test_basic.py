@@ -69,6 +69,13 @@ class BasicTest(MongoDBBasicTest):
         stream = datastream.Stream(self.datastream.get_tags(stream_id))
         self.assertItemsEqual(stream.tags, query_tags + tags)
 
+        another_stream_id = self.datastream.ensure_stream([{'name': 'xyz'}], [{'x': 1}], self.value_downsamplers, datastream.Granularity.Seconds)
+        as_tags = self.datastream.get_tags(another_stream_id)
+        self.assertTrue({'x': 1} in as_tags)
+        another_stream_id = self.datastream.ensure_stream([{'name': 'xyz'}], [{'x': 2}], self.value_downsamplers, datastream.Granularity.Seconds)
+        as_tags = self.datastream.get_tags(another_stream_id)
+        self.assertTrue({'x': 2} in as_tags and {'x': 1} not in as_tags)
+
         # Should not do anything
         self.assertItemsEqual(self.datastream.downsample_streams(), [])
 
