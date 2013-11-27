@@ -306,6 +306,28 @@ class BasicTest(MongoDBBasicTest):
             derive_op='sum',
         )
 
+        # Attempt to ensure the stream with incompatible configuration (operator)
+        with self.assertRaises(exceptions.InconsistentStreamConfiguration):
+            self.datastream.ensure_stream(
+                [{'name': 'derived'}],
+                [],
+                self.value_downsamplers,
+                datastream.Granularity.Seconds,
+                derive_from=[streamA_id, streamB_id],
+                derive_op='derivative',
+            )
+
+        # Attempt to ensure the stream with incompatible configuration (input streams)
+        with self.assertRaises(exceptions.InconsistentStreamConfiguration):
+            self.datastream.ensure_stream(
+                [{'name': 'derived'}],
+                [],
+                self.value_downsamplers,
+                datastream.Granularity.Seconds,
+                derive_from=[streamB_id],
+                derive_op='sum',
+            )
+
         streamA = datastream.Stream(self.datastream.get_tags(streamA_id))
         streamB = datastream.Stream(self.datastream.get_tags(streamB_id))
         stream = datastream.Stream(self.datastream.get_tags(stream_id))

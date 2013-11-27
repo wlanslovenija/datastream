@@ -684,6 +684,7 @@ class DownsampleState(mongoengine.EmbeddedDocument):
 
 class DerivedStreamDescriptor(mongoengine.EmbeddedDocument):
     stream_ids = mongoengine.ListField(mongoengine.IntField())
+    external_stream_ids = mongoengine.ListField(mongoengine.UUIDField(binary=True))
     op = mongoengine.StringField()
     args = mongoengine.DynamicField()
 
@@ -830,9 +831,35 @@ class Backend(object):
             stream = Stream.objects.get(tags__all=query_tags)
 
             # If a stream already exists and the tags have changed, we update them
+            tags = list(self._process_tags(query_tags).union(self._process_tags(tags)))
             if tags != stream.tags:
                 stream.tags = tags
                 stream.save()
+
+            # If a stream already exists and the derive inputs and/or operator have changed,
+            # we raise an exception
+            if (derive_from and not stream.derived_from) or (not derive_from and stream.derived_from):
+                raise exceptions.InconsistentStreamConfiguration(
+                    "You cannot change a derived stream into a non-derived one or vice-versa"
+                )
+
+            if derive_from:
+                if derive_op != stream.derived_from.op:
+                    raise exceptions.InconsistentStreamConfiguration(
+                        "You cannot modify a derived stream's operator from '%s' to '%s'" % (stream.derived_from.op, derive_op)
+                    )
+
+                external_stream_ids = set()
+                for stream_dsc in derive_from:
+                    if not isinstance(stream_dsc, dict):
+                        stream_dsc = {'stream': stream_dsc}
+
+                    external_stream_ids.add(uuid.UUID(stream_dsc['stream']))
+
+                if external_stream_ids != set(stream.derived_from.external_stream_ids):
+                    raise exceptions.InconsistentStreamConfiguration(
+                        "You cannot modify a derived stream's input streams"
+                    )
         except Stream.DoesNotExist:
             # Create a new stream
             stream = Stream()
@@ -861,6 +888,7 @@ class Backend(object):
             if derive_from is not None:
                 # Validate that all source streams exist and resolve their internal ids
                 derive_stream_ids = []
+                derive_external_stream_ids = []
                 derive_stream_dscs = []
                 for stream_dsc in derive_from:
                     if not isinstance(stream_dsc, dict):
@@ -884,6 +912,7 @@ class Backend(object):
                         stream_dsc = stream_dsc.copy()
                         stream_dsc['stream'] = src_stream
 
+                        derive_external_stream_ids.append(src_stream.external_id)
                         derive_stream_ids.append(src_stream.id)
                         derive_stream_dscs.append(stream_dsc)
                     except Stream.DoesNotExist:
@@ -895,6 +924,7 @@ class Backend(object):
 
                 derived = DerivedStreamDescriptor()
                 derived.stream_ids = derive_stream_ids
+                derived.external_stream_ids = derive_external_stream_ids
                 derived.op = derive_op
                 derived.args = derive_args
                 stream.derived_from = derived

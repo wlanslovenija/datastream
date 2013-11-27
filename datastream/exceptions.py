@@ -10,6 +10,10 @@ class MultipleStreamsReturned(DatastreamException):
     pass
 
 
+class InconsistentStreamConfiguration(DatastreamException):
+    pass
+
+
 class UnsupportedDownsampler(DatastreamException, ValueError):
     pass
 
