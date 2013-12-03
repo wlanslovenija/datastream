@@ -1,12 +1,12 @@
 class hashabledict(dict):
-    def __key(self):
-        return tuple((k, self[k]) for k in sorted(self))
+    def __key(self, d):
+        return tuple((k, d[k]) for k in sorted(d))
 
     def __hash__(self):
-        return hash(self.__key())
+        return hash(self.__key(self))
 
     def __eq__(self, other):
-        return self.__key() == other.__key()
+        return self.__key(self) == self.__key(other)
 
 
 class class_property(property):
