@@ -417,7 +417,7 @@ class DerivationOperators(object):
 
             # First ensure that we have a numeric value, as we can't do anything with
             # other values
-            if not isinstance(value, (int, float)):
+            if value is not None and not isinstance(value, (int, float)):
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value for 'sum' operator."))
                 return
 
@@ -440,7 +440,9 @@ class DerivationOperators(object):
                 # Note that this append may be called multiple times with the same timestamp when
                 # multiple threads are calling update
                 try:
-                    self._backend._append(self._stream, sum(self._stream.derive_state[ts_key].values()), rounded_ts)
+                    values = [x for x in self._stream.derive_state[ts_key].values() if x is not None]
+                    s = sum(values) if values else None
+                    self._backend._append(self._stream, s, rounded_ts)
                 except exceptions.InvalidTimestamp:
                     pass
 
@@ -497,7 +499,13 @@ class DerivationOperators(object):
 
             # First ensure that we have a numeric value, as we can't do anything with
             # other values
-            if not isinstance(value, (int, float)):
+            if value is None:
+                # In case a null value is passed, we carry it on to the derived stream
+                self._backend._append(self._stream, None, timestamp)
+                self._stream.derive_state = None
+                self._stream.save()
+                return
+            elif not isinstance(value, (int, float)):
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value for 'derivative' operator."))
                 return
 
@@ -548,7 +556,9 @@ class DerivationOperators(object):
 
             # First ensure that we have a numeric value, as we can't do anything with
             # other values
-            if not isinstance(value, (int, float)):
+            if value is None:
+                return
+            elif not isinstance(value, (int, float)):
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value for 'counter_reset' operator."))
                 return
 
@@ -615,7 +625,13 @@ class DerivationOperators(object):
 
             # First ensure that we have a numeric value, as we can't do anything with
             # other values
-            if not isinstance(value, (int, float)):
+            if value is None:
+                # In case a null value is passed, we carry it on to the derived stream
+                self._backend._append(self._stream, None, timestamp)
+                self._stream.derive_state = None
+                self._stream.save()
+                return
+            elif not isinstance(value, (int, float)):
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value for 'counter_derivative' operator."))
                 return
 
