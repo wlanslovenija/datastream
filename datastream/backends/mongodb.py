@@ -86,6 +86,9 @@ class ValueDownsamplers(DownsamplersBase):
             self.count = 0
 
         def update(self, datum):
+            if datum is None:
+                return
+
             self.count += 1
 
         def finish(self, output):
@@ -100,9 +103,15 @@ class ValueDownsamplers(DownsamplersBase):
         name = 'sum'
 
         def initialize(self):
-            self.sum = 0
+            self.sum = None
 
         def update(self, datum):
+            if datum is None:
+                return
+
+            if self.sum is None:
+                self.sum = 0
+
             try:
                 self.sum += datum
             except TypeError:
@@ -120,13 +129,19 @@ class ValueDownsamplers(DownsamplersBase):
         name = 'sum_squares'
 
         def initialize(self):
-            self.sum = 0
+            self.sum = None
 
         def update(self, datum):
+            if datum is None:
+                return
+
+            if self.sum is None:
+                self.sum = 0
+
             try:
                 self.sum += datum * datum
             except TypeError:
-                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value for 'sum' downsampler."))
+                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value for 'sum_squares' downsampler."))
 
         def finish(self, output):
             assert self.key not in output
@@ -143,6 +158,9 @@ class ValueDownsamplers(DownsamplersBase):
             self.min = None
 
         def update(self, datum):
+            if datum is None:
+                return
+
             if self.min is None:
                 self.min = datum
             else:
@@ -163,6 +181,9 @@ class ValueDownsamplers(DownsamplersBase):
             self.max = None
 
         def update(self, datum):
+            if datum is None:
+                return
+
             if self.max is None:
                 self.max = datum
             else:
@@ -182,7 +203,14 @@ class ValueDownsamplers(DownsamplersBase):
 
         def postprocess(self, values):
             assert 'm' not in values
-            values[self.key] = float(values[api.VALUE_DOWNSAMPLERS['sum']]) / values[api.VALUE_DOWNSAMPLERS['count']]
+            n = float(values[api.VALUE_DOWNSAMPLERS['count']])
+
+            if n > 0:
+                s = float(values[api.VALUE_DOWNSAMPLERS['sum']])
+
+                values[self.key] = s / n
+            else:
+                values[self.key] = None
 
     class StdDev(_Base):
         """
@@ -195,13 +223,16 @@ class ValueDownsamplers(DownsamplersBase):
 
         def postprocess(self, values):
             n = float(values[api.VALUE_DOWNSAMPLERS['count']])
-            s = float(values[api.VALUE_DOWNSAMPLERS['sum']])
-            ss = float(values[api.VALUE_DOWNSAMPLERS['sum_squares']])
             assert self.key not in values
 
-            if n == 1:
+            if n == 0:
+                values[self.key] = None
+            elif n == 1:
                 values[self.key] = 0
             else:
+                s = float(values[api.VALUE_DOWNSAMPLERS['sum']])
+                ss = float(values[api.VALUE_DOWNSAMPLERS['sum_squares']])
+
                 values[self.key] = (n * ss - s ** 2) / (n * (n - 1))
 
 

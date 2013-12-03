@@ -616,6 +616,47 @@ class BasicTest(MongoDBBasicTest):
             self.assertEqual(len(w), 3)
             self.assertEqual(all([x.category == exceptions.InvalidValueWarning for x in w]), True)
 
+    def test_null_values(self):
+        stream_id = self.datastream.ensure_stream([{'name': 'foo'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
+
+        # Basic test with one stream
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        self.datastream.append(stream_id, None, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 1, tzinfo=pytz.utc)
+        self.datastream.append(stream_id, 10, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 1, 0, tzinfo=pytz.utc)
+        self.datastream.append(stream_id, None, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 1, 1, tzinfo=pytz.utc)
+        self.datastream.append(stream_id, None, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 2, 0, tzinfo=pytz.utc)
+        self.datastream.append(stream_id, 2, ts)
+
+        self.datastream.downsample_streams()
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
+        self.assertEqual(data[0]['v']['c'], 1)     # count
+        self.assertEqual(data[0]['v']['d'], 0.0)   # standard deviation
+        self.assertEqual(data[0]['v']['m'], 10.0)  # mean
+        self.assertEqual(data[0]['v']['l'], 10.0)  # minimum
+        self.assertEqual(data[0]['v']['q'], 100.0) # sum of squares
+        self.assertEqual(data[0]['v']['s'], 10.0)  # sum
+        self.assertEqual(data[0]['v']['u'], 10.0)  # maximum
+
+        self.assertEqual(data[1]['v']['c'], 0)    # count
+        self.assertEqual(data[1]['v']['d'], None) # standard deviation
+        self.assertEqual(data[1]['v']['m'], None) # mean
+        self.assertEqual(data[1]['v']['l'], None) # minimum
+        self.assertEqual(data[1]['v']['q'], None) # sum of squares
+        self.assertEqual(data[1]['v']['s'], None) # sum
+        self.assertEqual(data[1]['v']['u'], None) # maximum
+
+        # TODO: Test with different derivation operators
+
     def test_timestamp_ranges(self):
         stream_id = self.datastream.ensure_stream([{'name': 'foopub'}], [], self.value_downsamplers, datastream.Granularity.Seconds)
         with self.assertRaises(exceptions.InvalidTimestamp):
