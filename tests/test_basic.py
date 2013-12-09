@@ -44,6 +44,7 @@ class BasicTest(MongoDBBasicTest):
         tags = [
             'more',
             {'andmore': 'bar'},
+            {'andcomplex': {'foo': ['bar', 'foo']}},
         ]
         stream_id = self.datastream.ensure_stream(query_tags, tags, self.value_downsamplers, datastream.Granularity.Seconds)
 

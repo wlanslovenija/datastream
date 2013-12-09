@@ -1,4 +1,6 @@
 import calendar
+import collections
+import copy
 import datetime
 import inspect
 import os
@@ -842,6 +844,14 @@ class Backend(object):
         hashable counterparts, so they can be used in set operations.
         """
 
+        def hashable_convert(d):
+            for k, v in d.items():
+                if isinstance(v, collections.Mapping):
+                    d[k] = hashable_convert(v)
+                elif isinstance(v, (list, tuple)):
+                    d[k] = tuple([(hashable_convert(x) if isinstance(x, collections.Mapping) else x) for x in v])
+            return utils.hashabledict(d)
+
         converted_tags = set()
 
         for tag in tags:
@@ -850,9 +860,8 @@ class Backend(object):
                     if reserved in tag:
                         raise exceptions.ReservedTagNameError
 
-                # Convert dicts to hashable dicts so they can be used in set
-                # operations
-                tag = utils.hashabledict(tag)
+                # Convert dicts to hashable dicts so they can be used in set operations
+                tag = hashable_convert(copy.deepcopy(tag))
 
             converted_tags.add(tag)
 
