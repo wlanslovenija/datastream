@@ -760,7 +760,7 @@ class Stream(mongoengine.Document):
     derive_state = mongoengine.DynamicField()
     contributes_to = mongoengine.MapField(mongoengine.EmbeddedDocumentField(ContributesToStreamDescriptor))
     pending_backprocess = mongoengine.BooleanField()
-    tags = mongoengine.ListField(mongoengine.DynamicField())
+    tags = mongoengine.DictField()
 
     meta = dict(
         db_alias=DATABASE_ALIAS,
@@ -838,35 +838,6 @@ class Backend(object):
         # Used only to artificially advance time when testing, don't use!
         self._time_offset = ZERO_TIMEDELTA
 
-    def _process_tags(self, tags):
-        """
-        Checks that reserved tags are not used and converts dicts to their
-        hashable counterparts, so they can be used in set operations.
-        """
-
-        def hashable_convert(d):
-            for k, v in d.items():
-                if isinstance(v, collections.Mapping):
-                    d[k] = hashable_convert(v)
-                elif isinstance(v, (list, tuple)):
-                    d[k] = tuple([(hashable_convert(x) if isinstance(x, collections.Mapping) else x) for x in v])
-            return utils.hashabledict(d)
-
-        converted_tags = set()
-
-        for tag in tags:
-            if isinstance(tag, dict):
-                for reserved in api.RESERVED_TAGS:
-                    if reserved in tag:
-                        raise exceptions.ReservedTagNameError
-
-                # Convert dicts to hashable dicts so they can be used in set operations
-                tag = hashable_convert(copy.deepcopy(tag))
-
-            converted_tags.add(tag)
-
-        return converted_tags
-
     def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity, derive_from, derive_op, derive_args):
         """
         Ensures that a specified stream exists.
@@ -884,12 +855,13 @@ class Backend(object):
         """
 
         try:
-            stream = Stream.objects.get(tags__all=query_tags)
+            stream = Stream.objects.get(**self._get_tag_query_dict(None, query_tags))
 
             # If a stream already exists and the tags have changed, we update them
-            tags = list(self._process_tags(query_tags).union(self._process_tags(tags)))
-            if tags != stream.tags:
-                stream.tags = tags
+            combined_tags = query_tags.copy()
+            combined_tags.update(tags)
+            if combined_tags != stream.tags:
+                stream.tags = combined_tags
                 stream.save()
 
             # If a stream already exists and the derive inputs and/or operator have changed,
@@ -938,7 +910,8 @@ class Backend(object):
 
             stream.value_downsamplers = list(value_downsamplers)
             stream.highest_granularity = highest_granularity
-            stream.tags = list(self._process_tags(query_tags).union(self._process_tags(tags)))
+            stream.tags = query_tags.copy()
+            stream.tags.update(tags)
 
             # Setup source stream metadata for derivate streams
             if derive_from is not None:
@@ -1065,18 +1038,18 @@ class Backend(object):
         """
 
         tags = stream.tags
-        tags += [
-            {'stream_id': unicode(stream.external_id)},
-            {'value_downsamplers': stream.value_downsamplers},
-            {'time_downsamplers': self.time_downsamplers},
-            {'highest_granularity': stream.highest_granularity},
-            {'pending_backprocess': bool(stream.pending_backprocess)}
-        ]
+        tags.update({
+            'stream_id': unicode(stream.external_id),
+            'value_downsamplers': stream.value_downsamplers,
+            'time_downsamplers': self.time_downsamplers,
+            'highest_granularity': stream.highest_granularity,
+            'pending_backprocess': bool(stream.pending_backprocess)
+        })
 
         if stream.derived_from:
-            tags += [{'derived_from': self._map_derived_from(stream)}]
+            tags.update({'derived_from': self._map_derived_from(stream)})
         if stream.contributes_to:
-            tags += [{'contributes_to': self._map_contributes_to(stream)}]
+            tags.update({'contributes_to': self._map_contributes_to(stream)})
 
         return tags
 
@@ -1085,7 +1058,7 @@ class Backend(object):
         Returns the tags for the specified stream.
 
         :param stream_id: Stream identifier
-        :return: A list of tags for the stream
+        :return: A dictionary of tags for the stream
         """
 
         try:
@@ -1096,15 +1069,41 @@ class Backend(object):
 
         return tags
 
+    def _get_tag_query_dict(self, prefix, tags, value=None):
+        """
+        Generates a dictionary suitable for a MongoEngine query.
+
+        :param prefix: Prefix of all keys
+        :param tags: A dictionary of tag values
+        :param value: Optional value to use instead of values in tags
+        """
+        
+        ops = {}
+
+        if prefix is None:
+            prefix = 'tags'
+        else:
+            prefix = '%s__tags' % prefix
+
+        for k, v in tags.iteritems():
+            if isinstance(v, collections.Mapping):
+                v = v if value is None else value
+                ops.update(self._get_tag_query_dict('%s__%s' % (prefix, k), v))
+            else:
+                v = v if value is None else value
+                ops['%s__%s' % (prefix, k)] = v
+
+        return ops
+
     def update_tags(self, stream_id, tags):
         """
         Updates stream tags with new tags, overriding existing ones.
 
         :param stream_id: Stream identifier
-        :param tags: A list of new tags
+        :param tags: A dictionary of new tags
         """
 
-        if not Stream.objects(external_id=uuid.UUID(stream_id)).update(set__tags=list(self._process_tags(tags))):
+        if not Stream.objects(external_id=uuid.UUID(stream_id)).update(**self._get_tag_query_dict('set', tags)):
             # Returned count is 1 if stream is found even if nothing changed, this is what we want
             raise exceptions.StreamNotFound
 
@@ -1113,10 +1112,10 @@ class Backend(object):
         Removes stream tag.
 
         :param stream_id: Stream identifier
-        :param tag: Tag value to remove
+        :param tag: Dictionary describing the tag(s) to remove (values are ignored)
         """
 
-        if not Stream.objects(external_id=uuid.UUID(stream_id)).update(pull__tags=tag):
+        if not Stream.objects(external_id=uuid.UUID(stream_id)).update(**self._get_tag_query_dict('unset', tag, 1)):
             # Returned count is 1 if stream is found even if nothing removed, this is what we want
             raise exceptions.StreamNotFound
 
@@ -1130,7 +1129,7 @@ class Backend(object):
         :param stream_id: Stream identifier
         """
 
-        if not Stream.objects(external_id=uuid.UUID(stream_id)).update(set__tags=[]):
+        if not Stream.objects(external_id=uuid.UUID(stream_id)).update(set__tags={}):
             # Returned count is 1 if stream is found even if nothing changed, this is what we want
             raise exceptions.StreamNotFound
 
@@ -1143,19 +1142,20 @@ class Backend(object):
         """
 
         if query_tags is None:
-            query_tags = []
+            query_tags = {}
+        else:
+            query_tags = query_tags.copy()
 
         query_set = Stream.objects.all()
-        for tag in query_tags[:]:
-            if isinstance(tag, dict):
-                if 'stream_id' in tag:
-                    query_set = query_set.filter(external_id=uuid.UUID(tag['stream_id']))
-                    query_tags.remove(tag)
+
+        if 'stream_id' in query_tags:
+            query_set = query_set.filter(external_id=uuid.UUID(query_tags['stream_id']))
+            del query_tags['stream_id']
 
         if not query_tags:
             return query_set
         else:
-            return query_set.filter(tags__all=query_tags)
+            return query_set.filter(**self._get_tag_query_dict(None, query_tags))
 
     def find_streams(self, query_tags=None):
         """

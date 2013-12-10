@@ -137,64 +137,29 @@ assert Granularity.Seconds > Granularity.Seconds10 > Granularity.Minutes > Granu
 
 class Stream(object):
     def __init__(self, all_tags):
-        tags = []
-        for tag in all_tags:
-            try:
-                self.id = tag['stream_id']
-                continue
-            except (ValueError, KeyError, TypeError):
-                pass
+        self.tags = all_tags.copy()
 
-            try:
-                self.value_downsamplers = tag['value_downsamplers']
-                continue
-            except (ValueError, KeyError, TypeError):
-                pass
+        try:
+            self.id = all_tags['stream_id']
+            self.value_downsamplers = all_tags['value_downsamplers']
+            self.time_downsamplers = all_tags['time_downsamplers']
+            self.highest_granularity = all_tags['highest_granularity']
+            self.pending_backprocess = bool(all_tags['pending_backprocess'])
 
-            try:
-                self.time_downsamplers = tag['time_downsamplers']
-                continue
-            except (ValueError, KeyError, TypeError):
-                pass
+            if 'derived_from' in all_tags:
+                self.derived_from = all_tags['derived_from']
+                del self.tags['derived_from']
+            if 'contributes_to' in all_tags:
+                self.contributes_to = all_tags['contributes_to']
+                del self.tags['contributes_to']
 
-            try:
-                self.highest_granularity = tag['highest_granularity']
-                continue
-            except (ValueError, KeyError, TypeError):
-                pass
-
-            try:
-                self.derived_from = tag['derived_from']
-                continue
-            except (ValueError, KeyError, TypeError):
-                pass
-
-            try:
-                self.contributes_to = tag['contributes_to']
-                continue
-            except (ValueError, KeyError, TypeError):
-                pass
-
-            try:
-                self.pending_backprocess = bool(tag['pending_backprocess'])
-                continue
-            except (ValueError, KeyError, TypeError):
-                pass
-
-            tags.append(tag)
-
-        self.tags = tags
-
-        if not hasattr(self, 'id'):
-            raise ValueError("Supplied tags are missing 'stream_id'.")
-        if not hasattr(self, 'value_downsamplers'):
-            raise ValueError("Supplied tags are missing 'value_downsamplers'.")
-        if not hasattr(self, 'time_downsamplers'):
-            raise ValueError("Supplied tags are missing 'time_downsamplers'.")
-        if not hasattr(self, 'highest_granularity'):
-            raise ValueError("Supplied tags are missing 'highest_granularity'.")
-        if not hasattr(self, 'pending_backprocess'):
-            raise ValueError("Supplied tags are missing 'pending_backprocess'.")
+            del self.tags['stream_id']
+            del self.tags['value_downsamplers']
+            del self.tags['time_downsamplers']
+            del self.tags['highest_granularity']
+            del self.tags['pending_backprocess']
+        except KeyError, e:
+            raise ValueError("Supplied tags are missing %s." % str(e))
 
 RESERVED_TAGS = (
     'stream_id',
@@ -281,8 +246,8 @@ class Datastream(object):
         """
         Ensures that a specified stream exists.
 
-        :param query_tags: Tags which uniquely identify a stream
-        :param tags: Tags that should be used (together with `query_tags`) to create a
+        :param query_tags: A dictionary of tags which uniquely identify a stream
+        :param tags: A dictionary of tags that should be used (together with `query_tags`) to create a
                      stream when it doesn't yet exist
         :param value_downsamplers: A set of names of value downsampler functions for this stream
         :param highest_granularity: Predicted highest granularity of the data the stream
@@ -317,7 +282,7 @@ class Datastream(object):
         Returns the tags for the specified stream.
 
         :param stream_id: Stream identifier
-        :return: A list of tags for the stream
+        :return: A dictionary of tags for the stream
         """
 
         return self.backend.get_tags(stream_id)
@@ -327,17 +292,17 @@ class Datastream(object):
         Updates stream tags with new tags, overriding existing ones.
 
         :param stream_id: Stream identifier
-        :param tags: A list of new tags
+        :param tags: A dictionary of new tags
         """
 
         self.backend.update_tags(stream_id, tags)
 
     def remove_tag(self, stream_id, tag):
         """
-        Removes stream tag.
+        Removes a stream tag.
 
         :param stream_id: Stream identifier
-        :param tag: Tag value to remove
+        :param tag: Dictionary describing the tag(s) to remove (values are ignored)
         """
 
         self.backend.remove_tag(stream_id, tag)
