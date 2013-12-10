@@ -1077,7 +1077,7 @@ class Backend(object):
         :param tags: A dictionary of tag values
         :param value: Optional value to use instead of values in tags
         """
-        
+
         ops = {}
 
         if prefix is None:
