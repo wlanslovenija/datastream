@@ -913,6 +913,13 @@ class Backend(object):
             stream.tags = query_tags.copy()
             stream.tags.update(tags)
 
+            # Ensure there is an index on the query tags
+            db = mongoengine.connection.get_db(DATABASE_ALIAS)
+            index_spec = []
+            for tag in sorted(self._get_tag_query_dict(None, query_tags).keys()):
+                index_spec.append((tag.replace('__', '.'), pymongo.ASCENDING))
+            db.streams.ensure_index(index_spec)
+
             # Setup source stream metadata for derivate streams
             if derive_from is not None:
                 # Validate that all source streams exist and resolve their internal ids
