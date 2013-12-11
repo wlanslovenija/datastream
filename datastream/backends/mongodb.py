@@ -117,7 +117,7 @@ class ValueDownsamplers(DownsamplersBase):
             try:
                 self.sum += datum
             except TypeError:
-                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value for 'sum' downsampler."))
+                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'sum' downsampler." % repr(datum)))
 
         def finish(self, output):
             assert self.key not in output
@@ -143,7 +143,7 @@ class ValueDownsamplers(DownsamplersBase):
             try:
                 self.sum += datum * datum
             except TypeError:
-                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value for 'sum_squares' downsampler."))
+                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'sum_squares' downsampler." % repr(datum)))
 
         def finish(self, output):
             assert self.key not in output
@@ -419,8 +419,8 @@ class DerivationOperators(object):
 
             # First ensure that we have a numeric value, as we can't do anything with
             # other values
-            if value is not None and not isinstance(value, (int, float)):
-                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value for 'sum' operator."))
+            if value is not None and not isinstance(value, (int, long, float)):
+                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'sum' operator." % repr(value)))
                 return
 
             rounded_ts = self._stream.highest_granularity.round_timestamp(timestamp)
@@ -507,15 +507,18 @@ class DerivationOperators(object):
                 self._stream.derive_state = None
                 self._stream.save()
                 return
-            elif not isinstance(value, (int, float)):
-                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value for 'derivative' operator."))
+            elif not isinstance(value, (int, long, float)):
+                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'derivative' operator." % repr(value)))
                 return
 
             if self._stream.derive_state is not None:
                 # We already have a previous value, compute derivative
                 delta = float((timestamp - self._stream.derive_state['t']).total_seconds())
-                derivative = (value - self._stream.derive_state['v']) / delta
-                self._backend._append(self._stream, derivative, timestamp)
+                if delta != 0:
+                    derivative = (value - self._stream.derive_state['v']) / delta
+                    self._backend._append(self._stream, derivative, timestamp)
+                else:
+                    warnings.warn(exceptions.InvalidValueWarning("Zero time-delta in derivative computation (stream %s)!" % src_stream.id))
 
             self._stream.derive_state = {'v': value, 't': timestamp}
             self._stream.save()
@@ -560,8 +563,8 @@ class DerivationOperators(object):
             # other values
             if value is None:
                 return
-            elif not isinstance(value, (int, float)):
-                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value for 'counter_reset' operator."))
+            elif not isinstance(value, (int, long, float)):
+                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'counter_reset' operator." % repr(value)))
                 return
 
             if self._stream.derive_state is not None:
@@ -633,8 +636,8 @@ class DerivationOperators(object):
                 self._stream.derive_state = None
                 self._stream.save()
                 return
-            elif not isinstance(value, (int, float)):
-                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value for 'counter_derivative' operator."))
+            elif not isinstance(value, (int, long, float)):
+                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'counter_derivative' operator." % repr(value)))
                 return
 
             if name is None:
@@ -654,8 +657,11 @@ class DerivationOperators(object):
 
                     if vdelta is not None:
                         tdelta = float((timestamp - self._stream.derive_state['t']).total_seconds())
-                        derivative = vdelta / tdelta
-                        self._backend._append(self._stream, derivative, timestamp)
+                        if tdelta != 0:
+                            derivative = vdelta / tdelta
+                            self._backend._append(self._stream, derivative, timestamp)
+                        else:
+                            warnings.warn(exceptions.InvalidValueWarning("Zero time-delta in derivative computation (stream %s)!" % src_stream.id))
 
                 self._stream.derive_state = {'v': value, 't': timestamp}
             elif name == "reset" and value == 1:
