@@ -22,8 +22,9 @@ from .. import api, exceptions, utils
 
 DATABASE_ALIAS = 'datastream'
 
-# The largest integer that can be stored in MongoDB; larger values need to use floats
+# The largest/smallest integer that can be stored in MongoDB; larger values need to use floats/strings
 MAXIMUM_INTEGER = 2 ** 63 - 1
+MINIMUM_INTEGER = -2 ** 63
 
 ZERO_TIMEDELTA = datetime.timedelta()
 ONE_SECOND_TIMEDELTA = datetime.timedelta(seconds=1)
@@ -38,12 +39,15 @@ def deserialize_numeric_value(value):
     if isinstance(value, (int, long, float)):
         return value
     elif isinstance(value, decimal.Decimal):
-        return int(value)
+        return value
     elif isinstance(value, basestring):
         try:
             return int(value)
         except ValueError:
-            raise TypeError
+            try:
+                return decimal.Decimal(value)
+            except decimal.InvalidOperation:
+                raise TypeError
     else:
         raise TypeError
 
@@ -56,13 +60,14 @@ def serialize_numeric_value(value):
 
     if isinstance(value, float):
         return value
-    elif isinstance(value, (int, long)) and value > MAXIMUM_INTEGER:
+    elif isinstance(value, (int, long)) and (value > MAXIMUM_INTEGER or value < MINIMUM_INTEGER):
         return str(value)
     elif isinstance(value, decimal.Decimal):
-        if value > MAXIMUM_INTEGER:
-            return str(value)
+        int_value = int(value)
+        if MINIMUM_INTEGER <= value <= MAXIMUM_INTEGER and int_value == value:
+            return int_value
         else:
-            return int(value)
+            return str(value)
     else:
         return value
 
