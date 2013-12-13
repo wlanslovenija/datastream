@@ -29,7 +29,7 @@ ZERO_TIMEDELTA = datetime.timedelta()
 ONE_SECOND_TIMEDELTA = datetime.timedelta(seconds=1)
 
 
-def get_numeric_value(value):
+def deserialize_numeric_value(value):
     """
     Attempts to parse a value as a number and raises a type error in case
     a conversion is not possible.
@@ -48,7 +48,7 @@ def get_numeric_value(value):
         raise TypeError
 
 
-def store_numeric_value(value):
+def serialize_numeric_value(value):
     """
     Attempts to properly store a numeric value. If the value is not a number,
     it is not converted and is returned unchanged.
@@ -155,13 +155,13 @@ class ValueDownsamplers(DownsamplersBase):
                 self.sum = 0
 
             try:
-                self.sum += get_numeric_value(datum)
+                self.sum += deserialize_numeric_value(datum)
             except TypeError:
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'sum' downsampler." % repr(datum)))
 
         def finish(self, output):
             assert self.key not in output
-            output[self.key] = store_numeric_value(self.sum)
+            output[self.key] = serialize_numeric_value(self.sum)
 
     class SumSquares(_Base):
         """
@@ -181,14 +181,14 @@ class ValueDownsamplers(DownsamplersBase):
                 self.sum = 0
 
             try:
-                datum = get_numeric_value(datum)
+                datum = deserialize_numeric_value(datum)
                 self.sum += datum * datum
             except TypeError:
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'sum_squares' downsampler." % repr(datum)))
 
         def finish(self, output):
             assert self.key not in output
-            output[self.key] = store_numeric_value(self.sum)
+            output[self.key] = serialize_numeric_value(self.sum)
 
     class Min(_Base):
         """
@@ -205,7 +205,7 @@ class ValueDownsamplers(DownsamplersBase):
                 return
 
             try:
-                datum = get_numeric_value(datum)
+                datum = deserialize_numeric_value(datum)
             except TypeError:
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'min' downsampler." % repr(datum)))
                 return
@@ -217,7 +217,7 @@ class ValueDownsamplers(DownsamplersBase):
 
         def finish(self, output):
             assert self.key not in output
-            output[self.key] = store_numeric_value(self.min)
+            output[self.key] = serialize_numeric_value(self.min)
 
     class Max(_Base):
         """
@@ -234,7 +234,7 @@ class ValueDownsamplers(DownsamplersBase):
                 return
 
             try:
-                datum = get_numeric_value(datum)
+                datum = deserialize_numeric_value(datum)
             except TypeError:
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'max' downsampler." % repr(datum)))
                 return
@@ -246,7 +246,7 @@ class ValueDownsamplers(DownsamplersBase):
 
         def finish(self, output):
             assert self.key not in output
-            output[self.key] = store_numeric_value(self.max)
+            output[self.key] = serialize_numeric_value(self.max)
 
     class Mean(_Base):
         """
@@ -261,7 +261,7 @@ class ValueDownsamplers(DownsamplersBase):
             n = float(values[api.VALUE_DOWNSAMPLERS['count']])
 
             if n > 0:
-                s = float(get_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum']]))
+                s = float(deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum']]))
 
                 values[self.key] = s / n
             else:
@@ -285,8 +285,8 @@ class ValueDownsamplers(DownsamplersBase):
             elif n == 1:
                 values[self.key] = 0
             else:
-                s = float(get_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum']]))
-                ss = float(get_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum_squares']]))
+                s = float(deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum']]))
+                ss = float(deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum_squares']]))
 
                 values[self.key] = (n * ss - s ** 2) / (n * (n - 1))
 
@@ -465,7 +465,7 @@ class DerivationOperators(object):
             if isinstance(value, dict):
                 # TODO: This is probably not right, currently only the mean is taken into account
                 try:
-                    value = float(get_numeric_value(value[api.VALUE_DOWNSAMPLERS['sum']])) / value[api.VALUE_DOWNSAMPLERS['count']]
+                    value = float(deserialize_numeric_value(value[api.VALUE_DOWNSAMPLERS['sum']])) / value[api.VALUE_DOWNSAMPLERS['count']]
                     timestamp = timestamp[api.TIME_DOWNSAMPLERS['last']]
                 except KeyError:
                     pass
@@ -473,7 +473,7 @@ class DerivationOperators(object):
             # First ensure that we have a numeric value, as we can't do anything with other values
             if value is not None:
                 try:
-                    value = get_numeric_value(value)
+                    value = deserialize_numeric_value(value)
                 except TypeError:
                     warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'sum' operator." % repr(value)))
                     return
@@ -484,7 +484,7 @@ class DerivationOperators(object):
             # (in addition ME can't handle queries with field names that look like numbers)
             db = mongoengine.connection.get_db(DATABASE_ALIAS)
             db.streams.update({'_id': self._stream.id}, {
-                '$set': {('derive_state.%s.%s' % (ts_key, src_stream.id)): store_numeric_value(value)}
+                '$set': {('derive_state.%s.%s' % (ts_key, src_stream.id)): serialize_numeric_value(value)}
             }, w=1)
             self._stream.reload()
 
@@ -497,7 +497,7 @@ class DerivationOperators(object):
                 # Note that this append may be called multiple times with the same timestamp when
                 # multiple threads are calling update
                 try:
-                    values = [get_numeric_value(x) for x in self._stream.derive_state[ts_key].values() if x is not None]
+                    values = [deserialize_numeric_value(x) for x in self._stream.derive_state[ts_key].values() if x is not None]
                     s = sum(values) if values else None
                     self._backend._append(self._stream, s, rounded_ts)
                 except exceptions.InvalidTimestamp:
@@ -563,7 +563,7 @@ class DerivationOperators(object):
 
             # First ensure that we have a numeric value, as we can't do anything with other values
             try:
-                value = get_numeric_value(value)
+                value = deserialize_numeric_value(value)
             except TypeError:
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'derivative' operator." % repr(value)))
                 return
@@ -572,12 +572,12 @@ class DerivationOperators(object):
                 # We already have a previous value, compute derivative
                 delta = float((timestamp - self._stream.derive_state['t']).total_seconds())
                 if delta != 0:
-                    derivative = (value - get_numeric_value(self._stream.derive_state['v'])) / delta
+                    derivative = (value - deserialize_numeric_value(self._stream.derive_state['v'])) / delta
                     self._backend._append(self._stream, derivative, timestamp)
                 else:
                     warnings.warn(exceptions.InvalidValueWarning("Zero time-delta in derivative computation (stream %s)!" % src_stream.id))
 
-            self._stream.derive_state = {'v': store_numeric_value(value), 't': timestamp}
+            self._stream.derive_state = {'v': serialize_numeric_value(value), 't': timestamp}
             self._stream.save()
 
     class CounterReset(_Base):
@@ -621,7 +621,7 @@ class DerivationOperators(object):
 
             # First ensure that we have a numeric value, as we can't do anything with other values
             try:
-                value = get_numeric_value(value)
+                value = deserialize_numeric_value(value)
             except TypeError:
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'counter_reset' operator." % repr(value)))
                 return
@@ -629,10 +629,10 @@ class DerivationOperators(object):
             if self._stream.derive_state is not None:
                 # We already have a previous value, check what value needs to be inserted
                 # TODO: Add a configurable maximum counter value so overflows can be detected
-                if get_numeric_value(self._stream.derive_state['v']) > value:
+                if deserialize_numeric_value(self._stream.derive_state['v']) > value:
                     self._backend._append(self._stream, 1, timestamp)
 
-            self._stream.derive_state = {'v': store_numeric_value(value), 't': timestamp}
+            self._stream.derive_state = {'v': serialize_numeric_value(value), 't': timestamp}
             self._stream.save()
 
     class CounterDerivative(_Base):
@@ -696,7 +696,7 @@ class DerivationOperators(object):
                 return
 
             try:
-                value = get_numeric_value(value)
+                value = deserialize_numeric_value(value)
             except TypeError:
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'counter_derivative' operator." % repr(value)))
                 return
@@ -705,7 +705,7 @@ class DerivationOperators(object):
                 # A data value has just been added
                 if self._stream.derive_state is not None:
                     # We already have a previous value, compute derivative
-                    v1 = get_numeric_value(self._stream.derive_state['v'])
+                    v1 = deserialize_numeric_value(self._stream.derive_state['v'])
                     vdelta = value - v1
                     if v1 > value:
                         # Treat this as an overflow
@@ -724,7 +724,7 @@ class DerivationOperators(object):
                         else:
                             warnings.warn(exceptions.InvalidValueWarning("Zero time-delta in derivative computation (stream %s)!" % src_stream.id))
 
-                self._stream.derive_state = {'v': store_numeric_value(value), 't': timestamp}
+                self._stream.derive_state = {'v': serialize_numeric_value(value), 't': timestamp}
             elif name == "reset" and value == 1:
                 # A reset stream marker has just been added, reset state
                 self._stream.derive_state = None
@@ -1314,7 +1314,7 @@ class Backend(object):
         # If the value is too big to store into MongoDB as an integer and is not already a float,
         # convert it to string and write a string into the database
         if isinstance(value, numbers.Number):
-            value = store_numeric_value(value)
+            value = serialize_numeric_value(value)
 
         # Append the datapoint into appropriate granularity
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
@@ -1405,12 +1405,12 @@ class Backend(object):
             if isinstance(result['v'], dict):
                 for k, v in result['v'].iteritems():
                     try:
-                        result['v'][k] = get_numeric_value(v)
+                        result['v'][k] = deserialize_numeric_value(v)
                     except TypeError:
                         pass
             else:
                 try:
-                    result['v'] = get_numeric_value(result['v'])
+                    result['v'] = deserialize_numeric_value(result['v'])
                 except TypeError:
                     pass
 
