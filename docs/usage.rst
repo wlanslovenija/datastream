@@ -16,9 +16,10 @@ for more information.
 Tags
 ----
 
-Each stream can have arbitrary metadata associated to it through arbitrary tags. You can then query streams by using
-those tags. Some tags are reserved to not conflict with stream settings and some tags are used by higher-level packages
-like django-datastream_.
+Each stream can have arbitrary JSON-serializable metadata associated to it through arbitrary tags. You can then query
+streams by using those tags. Some tags are reserved to not conflict with stream settings and some tags are used by
+higher-level packages like django-datastream_. Although tags can be complex values, simple values like strings or
+simple dicts are preferred.
 
 Downsampling
 ------------

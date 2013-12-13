@@ -6,19 +6,14 @@ Reference
 API
 ---
 
-The basic API operations are implemented in backends, which are
-responsible for storing the datapoints, performing downsampling and executing
-time span queries. Supported backends are MongoDB and Tempo.
-
 .. autoclass:: datastream.api.Datastream
    :members:
 
-Tags are a set of arbitrary JSON-serializable values that can be assigned to
-each stream. Although tags can be complex values, simple values like strings or
-dicts of strings are preferred.
-
 Backends
 --------
+
+The basic API operations are implemented in backends, which are responsible for storing the datapoints,
+performing downsampling and executing queries. Supported backend is MongoDB.
 
 Streams are stored in the streams collection, datapoints are stored in the
 datapoints.<granularity> collections, where <granularity> is seconds, minutes,
@@ -45,9 +40,7 @@ return values from highest_granularity collection.
 
 TODO: Describe how downsampled metadata is stored and updated by downsampling functions.
 
-
 .. autoclass:: datastream.backends.mongodb.Backend
-
 
 Value Downsamplers
 ------------------
@@ -108,13 +101,13 @@ Time Downsamplers
 
     median of all timestamps
 
-.. method:: first(key: f)
+.. method:: first(key: a, is the first in the alphabet)
 
-    first timestamp in the interval
+    the first timestamp of all datapoints
 
-.. method:: last(key: l)
+.. method:: last(key: z, is the last in the alphabet)
 
-    last timestamp in the interval
+    the last timestamp of all datapoints
 
 
 Exceptions
@@ -128,10 +121,28 @@ Exceptions
 
 .. autoclass:: MultipleStreamsReturned
 
+.. autoclass:: InconsistentStreamConfiguration
+
+.. autoclass:: OutstandingDependenciesError
+
 .. autoclass:: UnsupportedDownsampler
 
 .. autoclass:: UnsupportedGranularity
 
+.. autoclass:: UnsupportedDeriveOperator
+
 .. autoclass:: ReservedTagNameError
 
 .. autoclass:: InvalidTimestamp
+
+.. autoclass:: IncompatibleGranularities
+
+.. autoclass:: AppendToDerivedStreamNotAllowed
+
+.. autoclass:: InvalidOperatorArguments
+
+.. autoclass:: DatastreamWarning
+
+.. autoclass:: InvalidValueWarning
+
+.. autoclass:: InternalInconsistencyWarning

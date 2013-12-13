@@ -987,7 +987,7 @@ class Backend(object):
                 index_spec.append((tag.replace('__', '.'), pymongo.ASCENDING))
             db.streams.ensure_index(index_spec)
 
-            # Setup source stream metadata for derivate streams
+            # Setup source stream metadata for derived streams
             if derive_from is not None:
                 # Validate that all source streams exist and resolve their internal ids
                 derive_stream_ids = []
