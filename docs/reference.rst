@@ -1,6 +1,7 @@
+.. _reference:
+
 Reference
 =========
-
 
 API
 ---
@@ -48,7 +49,7 @@ TODO: Describe how downsampled metadata is stored and updated by downsampling fu
 .. autoclass:: datastream.backends.mongodb.Backend
 
 
-Value downsamplers
+Value Downsamplers
 ------------------
 
 .. method:: mean(key: m)
@@ -96,7 +97,7 @@ Value downsamplers
     for each value number of occurrences in all datapoints
 
 
-Time downsamplers
+Time Downsamplers
 -----------------
 
 .. method:: mean(key: m)
