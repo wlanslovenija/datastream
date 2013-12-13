@@ -1,4 +1,5 @@
 import datetime
+import decimal
 import time
 import unittest
 import warnings
@@ -791,7 +792,10 @@ class BasicTest(MongoDBBasicTest):
 
         for i in xrange(40):
             ts = datetime.datetime(2000, 1, 1, 12, 0, i, tzinfo=pytz.utc)
-            self.datastream.append(stream_id, 340282366920938463463374607431768211456, ts)
+            if i < 20:
+                self.datastream.append(stream_id, 340282366920938463463374607431768211456, ts)
+            else:
+                self.datastream.append(stream_id, decimal.Decimal(340282366920938463463374607431768211456), ts)
 
         self.datastream.downsample_streams(until=ts + datetime.timedelta(hours=10))
 

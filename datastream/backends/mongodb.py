@@ -2,6 +2,7 @@ import calendar
 import collections
 import copy
 import datetime
+import decimal
 import inspect
 import numbers
 import os
@@ -35,6 +36,8 @@ def get_numeric_value(value):
 
     if isinstance(value, (int, long, float)):
         return value
+    elif isinstance(value, decimal.Decimal):
+        return int(value)
     elif isinstance(value, basestring):
         try:
             return int(value)
@@ -54,6 +57,11 @@ def store_numeric_value(value):
         return value
     elif isinstance(value, (int, long)) and value > MAXIMUM_INTEGER:
         return str(value)
+    elif isinstance(value, decimal.Decimal):
+        if value > MAXIMUM_INTEGER:
+            return str(value)
+        else:
+            return int(value)
     else:
         return value
 
