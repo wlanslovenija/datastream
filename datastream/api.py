@@ -295,6 +295,10 @@ class Datastream(object):
         :param tags: A dictionary of new tags
         """
 
+        for key in tags.keys():
+            if key in RESERVED_TAGS:
+                raise exceptions.ReservedTagNameError
+
         self.backend.update_tags(stream_id, tags)
 
     def remove_tag(self, stream_id, tag):
