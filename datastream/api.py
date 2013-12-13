@@ -235,7 +235,7 @@ class Datastream(object):
 
     def __init__(self, backend):
         """
-        Class constructor.
+        Initializes the Datastream API.
 
         :param backend: Backend instance
         """

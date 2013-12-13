@@ -12,6 +12,11 @@ API
 Backends
 --------
 
+.. autoclass:: datastream.backends.mongodb.Backend
+
+Implementation Details
+......................
+
 The basic API operations are implemented in backends, which are responsible for storing the datapoints,
 performing downsampling and executing queries. Supported backend is MongoDB.
 
@@ -40,54 +45,52 @@ return values from highest_granularity collection.
 
 TODO: Describe how downsampled metadata is stored and updated by downsampling functions.
 
-.. autoclass:: datastream.backends.mongodb.Backend
-
 Value Downsamplers
 ------------------
 
 .. method:: mean(key: m)
 
-    average of all datapoints
+    Average of all datapoints.
 
 .. method:: median(key: e)
 
-    median of all datapoints
+    Median of all datapoints.
 
 .. method:: sum(key: s)
 
-    sum of all datapoints
+    Sum of all datapoints.
 
 .. method:: min(key: l, for lower)
 
-    minimum value of all dataponts
+    Minimum value of all dataponts.
 
 .. method:: max(key: u, for upper)
 
-    maximum value of all datapoints
+    Maximum value of all datapoints.
 
 .. method:: sum_squares(key: q)
 
-    sum of squares of all datapoints
+    Sum of squares of all datapoints.
 
 .. method:: std_dev(key: d)
 
-    standard deviation of all datapoints
+    Standard deviation of all datapoints.
 
 .. method:: count(key: c)
 
-    number of all datapoints
+    Number of all datapoints.
 
 .. method:: most_often(key: o, for often)
 
-    the most often occurring value of all datapoints
+    The most often occurring value of all datapoints.
 
 .. method:: least_often(key: r, for rare)
 
-    the least often occurring value of all datapoints
+    The least often occurring value of all datapoints.
 
 .. method:: frequencies(key: f)
 
-    for each value number of occurrences in all datapoints
+    For each value number of occurrences in all datapoints.
 
 
 Time Downsamplers
@@ -95,20 +98,38 @@ Time Downsamplers
 
 .. method:: mean(key: m)
 
-    average of all timestamps
+    Average of all timestamps.
 
 .. method:: median(key: e)
 
-    median of all timestamps
+    Median of all timestamps.
 
 .. method:: first(key: a, is the first in the alphabet)
 
-    the first timestamp of all datapoints
+    The first timestamp of all datapoints.
 
 .. method:: last(key: z, is the last in the alphabet)
 
-    the last timestamp of all datapoints
+    The last timestamp of all datapoints.
 
+Derive Operators
+----------------
+
+.. method:: sum(src_streams, dst_stream)
+
+    Sum of multiple streams.
+
+.. method:: derivative(src_stream, dst_stream)
+
+    Derivative of a stream.
+
+.. method:: counter_reset(src_stream, dst_stream)
+
+    Generates a counter reset stream.
+
+.. method:: counter_derivative([{'name': 'reset', 'stream': reset_stream_id}, {'stream': data_stream_id}], dst_stream, max_value=None)
+
+    Derivative of a monotonically increasing counter stream.
 
 Exceptions
 ----------

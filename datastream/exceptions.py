@@ -3,7 +3,12 @@ class DatastreamException(Exception):
     The base class for all datastream API exceptions.
     """
 
-    pass
+    # Just to remove useless docstring on __init__ in documentation
+    def __init__(self, *args, **kwargs):
+        """
+        """
+
+        super(DatastreamException, self).__init__(*args, **kwargs)
 
 
 class StreamNotFound(DatastreamException):
@@ -106,7 +111,12 @@ class DatastreamWarning(RuntimeWarning):
     The base class for all datastream API runtime warnings.
     """
 
-    pass
+    # Just to remove useless docstring on __init__ in documentation
+    def __init__(self, *args, **kwargs):
+        """
+        """
+
+        super(DatastreamWarning, self).__init__(*args, **kwargs)
 
 
 class InvalidValueWarning(DatastreamWarning):

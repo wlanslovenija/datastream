@@ -252,3 +252,6 @@ intersphinx_mapping = {
     'python': ('http://python.readthedocs.org/en/latest/', None),
     'django': ('http://django.readthedocs.org/en/latest/', None),
 }
+
+# This value selects what content will be inserted into the main body of an autoclass directive.
+autoclass_content = 'both'

@@ -51,6 +51,6 @@ Django HTTP Interface
 
 We provide a Django HTTP RESTful interface through django-datastream_ package. You can use it
 directly in your Django application, or check its source code to learn more how to integrate
-datastream API into your application.
+Datastream API into your application.
 
 .. _django-datastream: https://github.com/wlanslovenija/django-datastream
