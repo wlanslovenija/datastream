@@ -120,7 +120,7 @@ class BasicTest(MongoDBBasicTest):
         # Artificially increase backend time for a minute so that downsample will do something for minute granularity
         self.datastream.backend._time_offset += datetime.timedelta(minutes=1)
 
-        new_datapoints = self.datastream.downsample_streams(store_datapoints=True)
+        new_datapoints = self.datastream.downsample_streams(return_datapoints=True)
 
         # At least Seconds10 and Minutes granularities should be available because we artificially increased backend time
         # See https://github.com/wlanslovenija/datastream/issues/12

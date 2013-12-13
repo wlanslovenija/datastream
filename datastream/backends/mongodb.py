@@ -1590,7 +1590,7 @@ class Backend(object):
         except StopIteration:
             return datetime.datetime.min.replace(tzinfo=pytz.utc)
 
-    def downsample_streams(self, query_tags=None, until=None, store_datapoints=False):
+    def downsample_streams(self, query_tags=None, until=None, return_datapoints=False):
         """
         Requests the backend to downsample all streams matching the specified
         query tags. Once a time range has been downsampled, new datapoints
@@ -1599,9 +1599,9 @@ class Backend(object):
         :param query_tags: Tags that should be matched to streams
         :param until: Timestamp until which to downsample, not including datapoints
                       at a timestamp (optional, otherwise all until the current time)
-        :param store_datapoints: Should the added datapoints be stored
+        :param return_datapoints: Should newly downsampled datapoints be returned
         :return: A list of dictionaries containing `stream_id`, `granularity`, and `datapoint`
-                 for each datapoint created while downsampling
+                 for each datapoint created while downsampling, if `return_datapoints` was set
         """
 
         if until is None:
@@ -1611,20 +1611,20 @@ class Backend(object):
         new_datapoints = []
 
         for stream in self._get_stream_queryset(query_tags):
-            result = self._downsample_check(stream, until, store_datapoints)
-            if store_datapoints:
+            result = self._downsample_check(stream, until, return_datapoints)
+            if return_datapoints:
                 new_datapoints += result
 
         return new_datapoints
 
-    def _downsample_check(self, stream, until_timestamp, store_datapoints):
+    def _downsample_check(self, stream, until_timestamp, return_datapoints):
         """
         Checks if we need to perform any stream downsampling. In case it is needed,
         we perform downsampling.
 
         :param stream: Stream instance
         :param until_timestamp: Timestamp of the newly inserted datum
-        :param store_datapoints: Should the added datapoints be stored
+        :param return_datapoints: Should the added datapoints be stored
         """
 
         new_datapoints = []
@@ -1634,8 +1634,8 @@ class Backend(object):
             rounded_timestamp = granularity.round_timestamp(until_timestamp)
             # TODO: Why "can't compare offset-naive and offset-aware datetimes" is sometimes thrown here?
             if state is None or state.timestamp is None or rounded_timestamp > state.timestamp:
-                result = self._downsample(stream, granularity, rounded_timestamp, store_datapoints)
-                if store_datapoints:
+                result = self._downsample(stream, granularity, rounded_timestamp, return_datapoints)
+                if return_datapoints:
                     new_datapoints += result
 
         return new_datapoints
@@ -1686,7 +1686,7 @@ class Backend(object):
         oid += stream_id
         return objectid.ObjectId(oid)
 
-    def _downsample(self, stream, granularity, until_timestamp, store_datapoints):
+    def _downsample(self, stream, granularity, until_timestamp, return_datapoints):
         """
         Performs downsampling on the given stream and granularity.
 
@@ -1694,7 +1694,7 @@ class Backend(object):
         :param granularity: Lower granularity to downsample into
         :param until_timestamp: Timestamp until which to downsample, not including datapoints
                                 at a timestamp, rounded to the specified granularity
-        :param store_datapoints: Should the added datapoints be stored
+        :param return_datapoints: Should the added datapoints be stored
         """
 
         assert granularity.round_timestamp(until_timestamp) == until_timestamp
@@ -1773,7 +1773,7 @@ class Backend(object):
             # Process contributions to other streams
             self._process_contributes_to(stream, datapoint['t'], value, granularity)
 
-            if store_datapoints:
+            if return_datapoints:
                 new_datapoints.append({
                     'stream_id': str(stream.external_id),
                     'granularity': granularity,

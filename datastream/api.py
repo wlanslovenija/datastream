@@ -398,7 +398,7 @@ class Datastream(object):
 
         return self.backend.get_data(stream_id, granularity, start, end, start_exclusive, end_exclusive, reverse, value_downsamplers, time_downsamplers)
 
-    def downsample_streams(self, query_tags=None, until=None, store_datapoints=False):
+    def downsample_streams(self, query_tags=None, until=None, return_datapoints=False):
         """
         Requests the backend to downsample all streams matching the specified
         query tags. Once a time range has been downsampled, new datapoints
@@ -407,15 +407,15 @@ class Datastream(object):
         :param query_tags: Tags that should be matched to streams
         :param until: Timestamp until which to downsample, not including datapoints
                       at a timestamp (optional, otherwise all until the current time)
-        :param store_datapoints: Should the added datapoints be stored
+        :param return_datapoints: Should newly downsampled datapoints be returned
         :return: A list of dictionaries containing `stream_id`, `granularity`, and `datapoint`
-                 for each datapoint created while downsampling
+                 for each datapoint created while downsampling, if `return_datapoints` was set
         """
 
         if until is not None and until.tzinfo is None:
             until = until.replace(tzinfo=pytz.utc)
 
-        return self.backend.downsample_streams(query_tags, until, store_datapoints)
+        return self.backend.downsample_streams(query_tags, until, return_datapoints)
 
     def backprocess_streams(self, query_tags=None):
         """
