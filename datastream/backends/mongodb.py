@@ -1402,6 +1402,18 @@ class Backend(object):
         if 'v' in datapoint:
             result['v'] = datapoint['v']
 
+            if isinstance(result['v'], dict):
+                for k, v in result['v'].iteritems():
+                    try:
+                        result['v'][k] = get_numeric_value(v)
+                    except TypeError:
+                        pass
+            else:
+                try:
+                    result['v'] = get_numeric_value(result['v'])
+                except TypeError:
+                    pass
+
         return result
 
     def get_data(self, stream_id, granularity, start=None, end=None, start_exclusive=None, end_exclusive=None, reverse=False, value_downsamplers=None, time_downsamplers=None):

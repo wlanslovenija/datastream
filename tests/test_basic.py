@@ -803,17 +803,17 @@ class BasicTest(MongoDBBasicTest):
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
 
         self.assertEqual(len(data), 40)
-        self.assertEqual([x['v'] for x in data], ["340282366920938463463374607431768211456"] * 40)
+        self.assertEqual([x['v'] for x in data], [340282366920938463463374607431768211456] * 40)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
 
         self.assertEqual(data[0]['v']['c'], 10)    # count
         self.assertEqual(data[0]['v']['d'], 0.0)   # standard deviation
         self.assertAlmostEqual(data[0]['v']['m'], float(340282366920938463463374607431768211456))  # mean
-        self.assertEqual(data[0]['v']['l'], "340282366920938463463374607431768211456")  # minimum
-        self.assertEqual(data[0]['v']['q'], str(10 * (340282366920938463463374607431768211456 ** 2))) # sum of squares
-        self.assertEqual(data[0]['v']['s'], str(340282366920938463463374607431768211456 * 10))  # sum
-        self.assertEqual(data[0]['v']['u'], "340282366920938463463374607431768211456")  # maximum
+        self.assertEqual(data[0]['v']['l'], 340282366920938463463374607431768211456)  # minimum
+        self.assertEqual(data[0]['v']['q'], 10 * (340282366920938463463374607431768211456 ** 2)) # sum of squares
+        self.assertEqual(data[0]['v']['s'], 340282366920938463463374607431768211456 * 10)  # sum
+        self.assertEqual(data[0]['v']['u'], 340282366920938463463374607431768211456)  # maximum
 
         # Test derived streams
         other_stream_id = self.datastream.ensure_stream({'name': 'bar'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
@@ -834,7 +834,7 @@ class BasicTest(MongoDBBasicTest):
 
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         data = self.datastream.get_data(sum_stream_id, self.datastream.Granularity.Seconds, start=ts)
-        self.assertEqual([x['v'] for x in data], [str(340282366920938463463374607431768211456 * 2)] * 40)
+        self.assertEqual([x['v'] for x in data], [340282366920938463463374607431768211456 * 2] * 40)
 
         # Derivative
         derivative_stream_id = self.datastream.ensure_stream(
