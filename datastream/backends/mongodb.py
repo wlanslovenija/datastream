@@ -1600,7 +1600,9 @@ class Backend(object):
         :param query_tags: Tags that should be matched to streams
         :param until: Timestamp until which to downsample, not including datapoints
                       at a timestamp (optional, otherwise all until the current time)
-        :param return_datapoints: Should newly downsampled datapoints be returned
+        :param return_datapoints: Should newly downsampled datapoints be returned, this can
+                                  potentially create a huge temporary list and memory consumption
+                                  when downsampling many streams and datapoints
         :return: A list of dictionaries containing `stream_id`, `granularity`, and `datapoint`
                  for each datapoint created while downsampling, if `return_datapoints` was set
         """
