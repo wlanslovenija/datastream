@@ -28,6 +28,7 @@ MAXIMUM_INTEGER = 2 ** 63 - 1
 ZERO_TIMEDELTA = datetime.timedelta()
 ONE_SECOND_TIMEDELTA = datetime.timedelta(seconds=1)
 
+
 def get_numeric_value(value):
     """
     Attempts to parse a value as a number and raises a type error in case
