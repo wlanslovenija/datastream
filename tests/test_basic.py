@@ -811,7 +811,7 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(data[0]['v']['d'], 0.0)   # standard deviation
         self.assertAlmostEqual(data[0]['v']['m'], float(340282366920938463463374607431768211456))  # mean
         self.assertEqual(data[0]['v']['l'], "340282366920938463463374607431768211456")  # minimum
-        self.assertEqual(data[0]['v']['q'], str(10*(340282366920938463463374607431768211456 ** 2))) # sum of squares
+        self.assertEqual(data[0]['v']['q'], str(10 * (340282366920938463463374607431768211456 ** 2))) # sum of squares
         self.assertEqual(data[0]['v']['s'], str(340282366920938463463374607431768211456 * 10))  # sum
         self.assertEqual(data[0]['v']['u'], "340282366920938463463374607431768211456")  # maximum
 
