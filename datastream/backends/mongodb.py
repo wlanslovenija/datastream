@@ -761,14 +761,49 @@ class GranularityField(mongoengine.StringField):
         pass
 
 
+class Streams(api.Streams):
+    def __init__(self, datastream, queryset=None):
+        self.datastream = datastream
+        self.queryset = queryset
+
+    def batch_size(self, batch_size):
+        if self.queryset is not None:
+            self.queryset._cursor_obj.batch_size(batch_size)
+
+    def count(self):
+        if self.queryset is None:
+            return 0
+
+        return self.queryset.count()
+
+    def __iter__(self):
+        if self.queryset is None:
+            return
+
+        for stream in self.queryset:
+            yield self.datastream._get_stream_tags(stream)
+
+    def __getitem__(self, key):
+        if self.queryset is None:
+            raise IndexError
+
+        if isinstance(key, slice):
+            return Streams(self.datastream, queryset=self.queryset.__getitem__(key))
+        elif isinstance(key, (int, long)):
+            return self.datastream._get_stream_tags(self.queryset.__getitem__(key))
+        else:
+            raise TypeError
+
+
 class Datapoints(api.Datapoints):
-    def __init__(self, stream, cursor=None, empty_time=False):
-        self.stream = stream
+    def __init__(self, datastream, cursor=None, empty_time=False):
+        self.datastream = datastream
         self.cursor = cursor
         self.empty_time = empty_time
 
     def batch_size(self, batch_size):
-        self.cursor.batch_size(batch_size)
+        if self.cursor is not None:
+            self.cursor.batch_size(batch_size)
 
     def count(self):
         if self.cursor is None:
@@ -781,18 +816,18 @@ class Datapoints(api.Datapoints):
             return
 
         for datapoint in self.cursor:
-            yield self.stream._format_datapoint(datapoint, self.empty_time)
+            yield self.datastream._format_datapoint(datapoint, self.empty_time)
 
     def __getitem__(self, key):
         if self.cursor is None:
             raise IndexError
 
         if isinstance(key, slice):
-            return Datapoints(self.stream, cursor=self.cursor.__getitem__(key), empty_time=self.empty_time)
-        elif isinstance(key, int):
-            return self.stream._format_datapoint(self.cursor.__getitem__(key), self.empty_time)
+            return Datapoints(self.datastream, cursor=self.cursor.__getitem__(key), empty_time=self.empty_time)
+        elif isinstance(key, (int, long)):
+            return self.datastream._format_datapoint(self.cursor.__getitem__(key), self.empty_time)
         else:
-            raise AttributeError
+            raise TypeError
 
 
 class DownsampleState(mongoengine.EmbeddedDocument):
@@ -1241,11 +1276,10 @@ class Backend(object):
         Finds all streams matching the specified query tags.
 
         :param query_tags: Tags that should be matched to streams
-        :return: A list of matched stream descriptors
+        :return: A `Streams` iterator over matched stream descriptors
         """
 
-        query_set = self._get_stream_queryset(query_tags)
-        return [self._get_stream_tags(m) for m in query_set]
+        return Streams(self, self._get_stream_queryset(query_tags))
 
     def _supported_timestamp_range(self, timestamp):
         """

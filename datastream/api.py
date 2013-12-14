@@ -207,7 +207,7 @@ DERIVE_OPERATORS = {
 }
 
 
-class Datapoints(object):
+class ResultsBase(object):
     def batch_size(self, batch_size):
         # Ignore by default, this is just for optimization
         return
@@ -223,6 +223,14 @@ class Datapoints(object):
 
     def __getitem__(self, key):
         raise NotImplementedError
+
+
+class Streams(ResultsBase):
+    pass
+
+
+class Datapoints(ResultsBase):
+    pass
 
 
 class Datastream(object):
@@ -328,7 +336,7 @@ class Datastream(object):
         Finds all streams matching the specified query tags.
 
         :param query_tags: Tags that should be matched to streams
-        :return: A list of matched stream descriptors
+        :return: A `Streams` iterator over matched stream descriptors
         """
 
         return self.backend.find_streams(query_tags)
