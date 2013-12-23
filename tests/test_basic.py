@@ -119,6 +119,7 @@ class BasicTest(MongoDBBasicTest):
 
         # Artificially increase backend time for a minute so that downsample will do something for minute granularity
         self.datastream.backend._time_offset += datetime.timedelta(minutes=1)
+        self.assertEqual(self.datastream.append(stream_id, 42)['datapoint']['v'], 42)
 
         new_datapoints = self.datastream.downsample_streams(return_datapoints=True)
 
@@ -126,7 +127,7 @@ class BasicTest(MongoDBBasicTest):
         # See https://github.com/wlanslovenija/datastream/issues/12
         self.assertTrue(len(new_datapoints) >= 2)
         self.assertEquals(new_datapoints[0]['datapoint']['v'], {'c': 1, 'd': 0, 'm': 42.0, 'l': 42, 'q': 1764, 's': 42, 'u': 42})
-        self.assertEquals(new_datapoints[1]['datapoint']['v'], {'c': 1, 'd': 0, 'm': 42.0, 'l': 42, 'q': 1764, 's': 42, 'u': 42})
+        self.assertEquals(new_datapoints[6]['datapoint']['v'], {'c': 1, 'd': 0, 'm': 42.0, 'l': 42, 'q': 1764, 's': 42, 'u': 42})
 
         data = self.datastream.get_data(
             stream_id,
@@ -134,7 +135,7 @@ class BasicTest(MongoDBBasicTest):
             datetime.datetime.utcfromtimestamp(0),
             datetime.datetime.utcfromtimestamp(time.time()) + self.datastream.backend._time_offset,
         )
-        self.assertEqual(len(data), 1)
+        self.assertEqual(len(data), 2)
         self.assertEqual(data[0]['v'], 42)
 
         data = self.datastream.get_data(
@@ -142,16 +143,16 @@ class BasicTest(MongoDBBasicTest):
             datastream.Granularity.Seconds,
             datetime.datetime.utcfromtimestamp(0),
         )
-        self.assertEqual(len(data), 1)
+        self.assertEqual(len(data), 2)
         self.assertEqual(data[0]['v'], 42)
 
         # At least Seconds10 and Minutes granularities should be available because we artificially increased backend time
         # See https://github.com/wlanslovenija/datastream/issues/12
         self.assertTrue(len(self._callback_points) >= 3, len(self._callback_points))
-        cb_stream_id, cb_granularity, cb_datapoint = self._callback_points[1]
+        cb_stream_id, cb_granularity, cb_datapoint = self._callback_points[2]
         self.assertEqual(cb_stream_id, stream_id)
         self.assertEqual(cb_granularity, datastream.Granularity.Seconds10)
-        cb_stream_id, cb_granularity, cb_datapoint = self._callback_points[2]
+        cb_stream_id, cb_granularity, cb_datapoint = self._callback_points[8]
         self.assertEqual(cb_stream_id, stream_id)
         self.assertEqual(cb_granularity, datastream.Granularity.Minutes)
 
@@ -492,7 +493,7 @@ class BasicTest(MongoDBBasicTest):
         x = self.datastream.downsample_streams(until=ts + datetime.timedelta(hours=10))
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
-        self.assertEqual([x['v'] for x in data], [10.0, 10.0, 10.0, 10.0])
+        self.assertEqual([x['v'] for x in data], [10.0, 10.0, 10.0])
 
         # Test counter reset operator
         streamA_id = self.datastream.ensure_stream({'name': 'crA'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
@@ -787,6 +788,31 @@ class BasicTest(MongoDBBasicTest):
 
         self.assertEqual([x['v'] for x in data], [1])
 
+        # Test null value insertion on downsampling
+        stream_id = self.datastream.ensure_stream({'name': 'bar'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        self.datastream.append(stream_id, 10, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 10, 0, tzinfo=pytz.utc)
+        self.datastream.append(stream_id, 20, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 13, 45, tzinfo=pytz.utc)
+        self.datastream.downsample_streams(until=ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 20, 0, tzinfo=pytz.utc)
+        self.datastream.append(stream_id, 30, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 21, 0, tzinfo=pytz.utc)
+        self.datastream.append(stream_id, 30, ts)
+
+        self.datastream.downsample_streams()
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=ts)
+
+        self.assertEqual([x['v']['m'] for x in data], [10.] + [None]*9 + [20.] + [None]*9 + [30.])
+
     def test_big_integers(self):
         stream_id = self.datastream.ensure_stream({'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
 
@@ -894,16 +920,18 @@ class BasicTest(MongoDBBasicTest):
         self.datastream.append(stream_id, 4, ts)
         self.datastream.append(stream_id, 5, ts)
 
-        self.datastream.downsample_streams(until=ts + datetime.timedelta(hours=10))
+        self.datastream.append(stream_id, None, ts + datetime.timedelta(hours=10))
+
+        self.datastream.downsample_streams(until=ts + datetime.timedelta(hours=11))
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
-        self.assertEqual(len(data), 5)
+        self.assertEqual(len(data), 6)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts, end=ts)
         self.assertEqual(len(data), 5)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=ts)
-        self.assertEqual(len(data), 0)
+        self.assertEqual(len(data), 1)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=ts, end=ts)
         self.assertEqual(len(data), 0)
@@ -915,7 +943,8 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(len(data), 0)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
-        self.assertEqual(len(data), 1)
+        # Because of inserted NULL values
+        self.assertEqual(len(data), 3600)
 
         self.assertEqual(data[0]['t']['a'], ts) # first
         self.assertEqual(data[0]['t']['z'], ts) # last
@@ -929,17 +958,14 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(data[0]['v']['s'], 15) # sum
         self.assertEqual(data[0]['v']['u'], 5) # maximum
 
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
-        self.assertEqual(len(data), 1)
-
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=ts)
-        self.assertEqual(len(data), 1)
+        self.assertEqual(len(data), 600)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes10, start=ts)
-        self.assertEqual(len(data), 1)
+        self.assertEqual(len(data), 60)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Hours, start=ts)
-        self.assertEqual(len(data), 1)
+        self.assertEqual(len(data), 10)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Hours6, start=ts)
         self.assertEqual(len(data), 1)
@@ -981,24 +1007,18 @@ class BasicTest(MongoDBBasicTest):
         self.datastream.downsample_streams(until=datetime.datetime(2000, 1, 3, 12, 0, 10))
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=datetime.datetime.min)
-        self.assertEqual(len(data), 2)
+        self.assertEqual(len(data), 17280)
 
-        with self.assertRaises(exceptions.InvalidTimestamp):
-            self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 3, 12, 0, 0))
-        with self.assertRaises(exceptions.InvalidTimestamp):
-            self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 3, 12, 0, 5))
+        self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 3, 12, 0, 0))
+        self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 3, 12, 0, 5))
 
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 3, 12, 0, 10))
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 4, 12, 0, 0))
 
         self.datastream.downsample_streams(until=datetime.datetime(2000, 1, 10, 12, 0, 0))
 
-        with self.assertRaises(exceptions.InvalidTimestamp):
-            self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 4, 12, 0, 0))
-        with self.assertRaises(exceptions.InvalidTimestamp):
-            self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 5, 12, 0, 0))
-        with self.assertRaises(exceptions.InvalidTimestamp):
-            self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 9, 12, 0, 0))
+        self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 5, 12, 0, 0))
+        self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 9, 12, 0, 0))
 
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 10, 12, 0, 0))
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 10, 12, 0, 1))
@@ -1096,7 +1116,7 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(len(data), 5)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=datetime.datetime.min, end=datetime.datetime.max)
-        self.assertEqual(len(data), 120)
+        self.assertEqual(len(data), 119)
 
         # MINUTES
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=s, end=e)
@@ -1112,11 +1132,11 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(len(data), 0)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=datetime.datetime.min, end=datetime.datetime.max)
-        self.assertEqual(len(data), 20)
+        self.assertEqual(len(data), 19)
 
         # 10 MINUTES
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes10, start=datetime.datetime.min)
-        self.assertEqual(len(data), 2)
+        self.assertEqual(len(data), 1)
 
         # HOURS
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Hours, start=datetime.datetime.min)
@@ -1224,7 +1244,7 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(len(data), 5)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=datetime.datetime.min, end=datetime.datetime.max)
-        self.assertEqual(len(data), 120)
+        self.assertEqual(len(data), 119)
 
         # MINUTES
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=s, end=e)
@@ -1240,11 +1260,11 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(len(data), 0)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=datetime.datetime.min, end=datetime.datetime.max)
-        self.assertEqual(len(data), 20)
+        self.assertEqual(len(data), 19)
 
         # 10 MINUTES
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes10, start=datetime.datetime.min)
-        self.assertEqual(len(data), 2)
+        self.assertEqual(len(data), 1)
 
         # HOURS
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Hours, start=datetime.datetime.min)

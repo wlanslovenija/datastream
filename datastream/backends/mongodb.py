@@ -1294,19 +1294,6 @@ class Backend(object):
     def _force_timestamp_range(self, timestamp):
         return max(self._min_timestamp, min(self._max_timestamp, timestamp))
 
-    def _timestamp_after_downsampled(self, stream, timestamp):
-        """
-        We require that once a period has been downsampled, no new datapoint can be added there.
-        """
-
-        for granularity in api.Granularity.values[api.Granularity.values.index(stream.highest_granularity) + 1:]:
-            state = stream.downsample_state.get(granularity.name, None)
-            rounded_timestamp = granularity.round_timestamp(timestamp)
-            if state is None or state.timestamp is None or rounded_timestamp >= state.timestamp:
-                continue
-            else:
-                raise exceptions.InvalidTimestamp("Stream '%s' at granularity '%s' has already been downsampled until '%s' and datapoint timestamp falls into that range: %s" % (stream.external_id, granularity, state.timestamp, timestamp))
-
     def _process_contributes_to(self, stream, timestamp, value, granularity):
         """
         Processes stream contributions to other streams.
@@ -1369,22 +1356,9 @@ class Backend(object):
                 if object_id.generation_time < latest_timestamp:
                     raise exceptions.InvalidTimestamp("Datapoint timestamp must be equal or larger (newer) than the latest one '%s': %s" % (latest_timestamp, object_id.generation_time))
 
-            # We always check this because it does not require database access
-            self._timestamp_after_downsampled(stream, object_id.generation_time)
-
             datapoint = {'_id': object_id, 'm': stream.id, 'v': value}
 
         datapoint['_id'] = collection.insert(datapoint, w=1)
-
-        if timestamp is None and self._time_offset == ZERO_TIMEDELTA:
-            # When timestamp is not specified, database generates one, so we check it here
-            try:
-                self._timestamp_after_downsampled(stream, datapoint['_id'].generation_time)
-            except exceptions.InvalidTimestamp:
-                # Cleanup
-                collection.remove(datapoint['_id'], w=1)
-
-                raise
 
         # Process contributions to other streams
         self._process_contributes_to(stream, datapoint['_id'].generation_time, value, stream.highest_granularity)
@@ -1683,14 +1657,22 @@ class Backend(object):
 
         new_datapoints = []
 
+        # Last datapoint timestamp of one higher granularity
+        higher_last_ts = self._last_timestamp(stream)
+
         for granularity in api.Granularity.values[api.Granularity.values.index(stream.highest_granularity) + 1:]:
             state = stream.downsample_state.get(granularity.name, None)
-            rounded_timestamp = granularity.round_timestamp(until_timestamp)
+            rounded_timestamp = granularity.round_timestamp(min(until_timestamp, higher_last_ts))
             # TODO: Why "can't compare offset-naive and offset-aware datetimes" is sometimes thrown here?
             if state is None or state.timestamp is None or rounded_timestamp > state.timestamp:
-                result = self._downsample(stream, granularity, rounded_timestamp, return_datapoints)
-                if return_datapoints:
-                    new_datapoints += result
+                try:
+                    result = self._downsample(stream, granularity, rounded_timestamp, return_datapoints)
+                    if return_datapoints:
+                        new_datapoints += result
+                except exceptions.InvalidTimestamp:
+                    break
+
+            higher_last_ts = stream.downsample_state[granularity.name].timestamp or higher_last_ts
 
         return new_datapoints
 
@@ -1834,21 +1816,49 @@ class Backend(object):
                     'datapoint': self._format_datapoint(datapoint),
                 })
 
+        # TODO: Use generator here, not concatenation
+        for x in value_downsamplers + time_downsamplers:
+            x.initialize()
+
         downsampled_points = getattr(db.datapoints, granularity.name)
         current_granularity_period_timestamp = None
+        current_null_bucket = state.timestamp
         for datapoint in datapoints.sort('_id', 1):
             ts = datapoint['_id'].generation_time
             new_granularity_period_timestamp = granularity.round_timestamp(ts)
-            if current_granularity_period_timestamp is None:
-                # TODO: Use generator here, not concatenation
-                for x in value_downsamplers + time_downsamplers:
-                    x.initialize()
-            elif current_granularity_period_timestamp != new_granularity_period_timestamp:
+            if current_null_bucket is None:
+                # Current bucket obviously has a datapoint, so the next bucket is a candidate
+                # for being the first bucket that has no datapoints
+                current_null_bucket = granularity.round_timestamp(
+                    new_granularity_period_timestamp + datetime.timedelta(seconds=granularity.duration_in_seconds())
+                )
+
+            if current_granularity_period_timestamp is not None and \
+               current_granularity_period_timestamp != new_granularity_period_timestamp:
                 # All datapoints for current granularity period have been processed, we store the new datapoint
                 # This happens when interval ("datapoints" query) contains multiple not-yet-downsampled granularity periods
                 store_downsampled_datapoint(current_granularity_period_timestamp)
 
             current_granularity_period_timestamp = new_granularity_period_timestamp
+
+            # Insert NULL values into empty buckets
+            while current_null_bucket < current_granularity_period_timestamp:
+                for x in value_downsamplers:
+                    x.update(None)
+                for x in time_downsamplers:
+                    x.update(int(calendar.timegm(current_null_bucket.utctimetuple())))
+
+                store_downsampled_datapoint(current_null_bucket)
+
+                # Move to next bucket
+                current_null_bucket = granularity.round_timestamp(
+                    current_null_bucket + datetime.timedelta(seconds=granularity.duration_in_seconds())
+                )
+
+            # Move to next candidate NULL bucket
+            current_null_bucket = granularity.round_timestamp(
+                current_granularity_period_timestamp + datetime.timedelta(seconds=granularity.duration_in_seconds())
+            )
 
             # Update all downsamplers for the current datapoint
             for x in value_downsamplers:
@@ -1856,11 +1866,22 @@ class Backend(object):
             for x in time_downsamplers:
                 x.update(int(calendar.timegm(ts.utctimetuple())))
 
-        # Store the last downsampled datapoint as well
-        # The "datapoints" query above assures that just none or all datapoints for each granularity period
-        # is retrieved so we know that whole granularity period has been processed and we can now store its datapoint here
         if current_granularity_period_timestamp is not None:
             store_downsampled_datapoint(current_granularity_period_timestamp)
+
+            # Insert NULL values into empty buckets
+            while current_null_bucket < until_timestamp:
+                for x in value_downsamplers:
+                    x.update(None)
+                for x in time_downsamplers:
+                    x.update(int(calendar.timegm(current_null_bucket.utctimetuple())))
+
+                store_downsampled_datapoint(current_null_bucket)
+
+                # Move to next bucket
+                current_null_bucket = granularity.round_timestamp(
+                    current_null_bucket + datetime.timedelta(seconds=granularity.duration_in_seconds())
+                )
 
             # At the end, update the timestamp until which we have processed everything
             state.timestamp = until_timestamp
