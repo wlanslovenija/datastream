@@ -811,7 +811,7 @@ class BasicTest(MongoDBBasicTest):
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=ts)
 
-        self.assertEqual([x['v']['m'] for x in data], [10.] + [None]*9 + [20.] + [None]*9 + [30.])
+        self.assertEqual([x['v']['m'] for x in data], [10.] + [None] * 9 + [20.] + [None] * 9 + [30.])
 
     def test_big_integers(self):
         stream_id = self.datastream.ensure_stream({'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
