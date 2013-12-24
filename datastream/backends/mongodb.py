@@ -867,6 +867,8 @@ class Stream(mongoengine.Document):
     derive_state = mongoengine.DynamicField()
     contributes_to = mongoengine.MapField(mongoengine.EmbeddedDocumentField(ContributesToStreamDescriptor))
     pending_backprocess = mongoengine.BooleanField()
+    earliest_datapoint = mongoengine.DateTimeField()
+    latest_datapoint = mongoengine.DateTimeField()
     tags = mongoengine.DictField()
 
     meta = dict(
@@ -1157,7 +1159,13 @@ class Backend(object):
             'value_downsamplers': stream.value_downsamplers,
             'time_downsamplers': self.time_downsamplers,
             'highest_granularity': stream.highest_granularity,
-            'pending_backprocess': bool(stream.pending_backprocess)
+            'pending_backprocess': bool(stream.pending_backprocess),
+            'earliest_datapoint': stream.earliest_datapoint,
+            'latest_datapoint': stream.latest_datapoint,
+            'downsampled_until': dict([
+                (g.name, getattr(stream.downsample_state.get(g.name, None), 'timestamp', None))
+                for g in api.Granularity.values[api.Granularity.values.index(stream.highest_granularity) + 1:]
+            ])
         })
 
         if stream.derived_from:
@@ -1352,13 +1360,18 @@ class Backend(object):
 
             if check_timestamp:
                 # TODO: There is a race condition here, between check and insert
-                latest_timestamp = self._last_timestamp(stream)
-                if object_id.generation_time < latest_timestamp:
-                    raise exceptions.InvalidTimestamp("Datapoint timestamp must be equal or larger (newer) than the latest one '%s': %s" % (latest_timestamp, object_id.generation_time))
+                if stream.latest_datapoint and object_id.generation_time < stream.latest_datapoint:
+                    raise exceptions.InvalidTimestamp("Datapoint timestamp must be equal or larger (newer) than the latest one '%s': %s" % (stream.latest_datapoint, object_id.generation_time))
 
             datapoint = {'_id': object_id, 'm': stream.id, 'v': value}
 
         datapoint['_id'] = collection.insert(datapoint, w=1)
+
+        # Update latest/earliest datapoint timestamp metadata
+        stream.latest_datapoint = datapoint['_id'].generation_time
+        if stream.earliest_datapoint is None:
+            stream.earliest_datapoint = stream.latest_datapoint
+        stream.save()
 
         # Process contributions to other streams
         self._process_contributes_to(stream, datapoint['_id'].generation_time, value, stream.highest_granularity)
@@ -1593,29 +1606,6 @@ class Backend(object):
                     collection = getattr(db.datapoints, granularity.name)
                     collection.remove({'m': stream.id})
 
-    def _last_timestamp(self, stream=None):
-        """
-        Returns timestamp of the last datapoint among all streams, or of the specified stream.
-        """
-
-        db = mongoengine.connection.get_db(DATABASE_ALIAS)
-
-        if stream:
-            granularity = stream.highest_granularity.name
-            query = {'m': stream.id}
-        else:
-            # TODO: This is not necessary true, there could be a newer datapoint among streams which do not have highest granularity == api.Granularity.values[0] granularity
-            granularity = api.Granularity.values[0].name
-            query = {}
-
-        collection = getattr(db.datapoints, granularity)
-
-        try:
-            # _id is indexed descending, first value is the last inserted
-            return collection.find(query).sort('_id', -1).next()['_id'].generation_time
-        except StopIteration:
-            return datetime.datetime.min.replace(tzinfo=pytz.utc)
-
     def downsample_streams(self, query_tags=None, until=None, return_datapoints=False):
         """
         Requests the backend to downsample all streams matching the specified
@@ -1658,7 +1648,7 @@ class Backend(object):
         new_datapoints = []
 
         # Last datapoint timestamp of one higher granularity
-        higher_last_ts = self._last_timestamp(stream)
+        higher_last_ts = stream.latest_datapoint or self._min_timestamp
 
         for granularity in api.Granularity.values[api.Granularity.values.index(stream.highest_granularity) + 1:]:
             state = stream.downsample_state.get(granularity.name, None)

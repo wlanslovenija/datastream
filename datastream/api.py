@@ -145,6 +145,9 @@ class Stream(object):
             self.time_downsamplers = all_tags['time_downsamplers']
             self.highest_granularity = all_tags['highest_granularity']
             self.pending_backprocess = bool(all_tags['pending_backprocess'])
+            self.latest_datapoint = all_tags['latest_datapoint']
+            self.earliest_datapoint = all_tags['earliest_datapoint']
+            self.downsampled_until = all_tags['downsampled_until']
 
             if 'derived_from' in all_tags:
                 self.derived_from = all_tags['derived_from']
@@ -158,6 +161,9 @@ class Stream(object):
             del self.tags['time_downsamplers']
             del self.tags['highest_granularity']
             del self.tags['pending_backprocess']
+            del self.tags['latest_datapoint']
+            del self.tags['earliest_datapoint']
+            del self.tags['downsampled_until']
         except KeyError, e:
             raise ValueError("Supplied tags are missing %s." % str(e))
 
@@ -169,6 +175,9 @@ RESERVED_TAGS = (
     'derived_from',
     'contributes_to',
     'pending_backprocess',
+    'latest_datapoint',
+    'earliest_datapoint',
+    'downsampled_until',
 )
 
 VALUE_DOWNSAMPLERS = {

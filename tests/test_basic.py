@@ -53,6 +53,8 @@ class BasicTest(MongoDBBasicTest):
         self.assertItemsEqual(stream.value_downsamplers, self.value_downsamplers)
         self.assertItemsEqual(stream.time_downsamplers, self.time_downsamplers)
         self.assertEqual(stream.highest_granularity, datastream.Granularity.Seconds)
+        self.assertEqual(stream.earliest_datapoint, None)
+        self.assertEqual(stream.latest_datapoint, None)
 
         combined_tags = query_tags.copy()
         combined_tags.update(tags)
@@ -145,6 +147,16 @@ class BasicTest(MongoDBBasicTest):
         )
         self.assertEqual(len(data), 2)
         self.assertEqual(data[0]['v'], 42)
+
+        stream = datastream.Stream(self.datastream.get_tags(stream_id))
+        self.assertEqual(stream.earliest_datapoint, data[0]['t'])
+        self.assertEqual(stream.latest_datapoint, data[1]['t'])
+        self.assertTrue(datastream.Granularity.Seconds10.name in stream.downsampled_until)
+        self.assertTrue(datastream.Granularity.Minutes.name in stream.downsampled_until)
+        self.assertTrue(datastream.Granularity.Minutes10.name in stream.downsampled_until)
+        self.assertTrue(datastream.Granularity.Hours.name in stream.downsampled_until)
+        self.assertTrue(datastream.Granularity.Hours6.name in stream.downsampled_until)
+        self.assertTrue(datastream.Granularity.Days.name in stream.downsampled_until)
 
         # At least Seconds10 and Minutes granularities should be available because we artificially increased backend time
         # See https://github.com/wlanslovenija/datastream/issues/12
