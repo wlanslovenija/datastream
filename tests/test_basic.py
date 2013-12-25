@@ -962,7 +962,6 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(data[0]['t']['a'], ts) # first
         self.assertEqual(data[0]['t']['z'], ts) # last
         self.assertEqual(data[0]['t']['m'], ts) # mean
-        self.assertEqual(data[0]['t']['a'], ts) # median
         self.assertEqual(data[0]['v']['c'], 5) # count
         self.assertEqual(data[0]['v']['d'], 2.5) # standard deviation
         self.assertEqual(data[0]['v']['m'], 3.0) # mean
@@ -1036,13 +1035,13 @@ class BasicTest(MongoDBBasicTest):
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 10, 12, 0, 0))
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 10, 12, 0, 1))
 
-    def test_value_downsamplers(self):
+    def test_downsamplers(self):
         random.seed(42)
         points = 43205
         interval = 2
         downsample_every = 5000
         src_data = [random.randint(-1000, 1000) for _ in xrange(points)]
-        ts0 = datetime.datetime(2000, 1, 1, 0, 0, 0)
+        ts0 = datetime.datetime(2000, 1, 1, 0, 0, 0, tzinfo=pytz.utc)
         ts = ts0
 
         stream_id = self.datastream.ensure_stream({'name': 'test'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
@@ -1066,6 +1065,10 @@ class BasicTest(MongoDBBasicTest):
             self.assertEqual(data[0]['v']['u'], max(src_data[:n])) # maximum
             self.assertEqual(data[0]['v']['s'], sum(src_data[:n])) # sum
             self.assertEqual(data[0]['v']['q'], sum([x ** 2 for x in src_data[:n]])) # sum of squares
+
+            self.assertEqual(data[0]['t']['a'], ts0) # first
+            self.assertEqual(data[0]['t']['z'], ts0 + datetime.timedelta(seconds=(n - 1) * interval)) # last
+            self.assertEqual(data[0]['t']['m'], ts0 + datetime.timedelta(seconds=(n - 1) * interval / 2)) # mean
 
         for granularity in self.datastream.Granularity.values[1:]:
             if granularity.duration_in_seconds() >= points * interval:

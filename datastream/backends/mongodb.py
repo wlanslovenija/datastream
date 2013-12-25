@@ -72,6 +72,19 @@ def serialize_numeric_value(value):
         return value
 
 
+def middle_timestamp(dt, granularity):
+    """
+    Returns a timestamp that is located in the middle of the granularity
+    bucket.
+
+    :param dt: Timestamp rounded to specific granularity
+    :param granularity: Granularity instance
+    :return: Timestamp in the middle of the granularity bucket
+    """
+
+    return dt + datetime.timedelta(seconds=granularity.duration_in_seconds() // 2)
+
+
 class DownsamplersBase(object):
     """
     Base class for downsampler containers.
@@ -88,10 +101,10 @@ class DownsamplersBase(object):
         def initialize(self):
             pass
 
-        def update(self, datum):
+        def update(self, time, value):
             pass
 
-        def finish(self, output):
+        def finish(self, output, timestamp, granularity):
             pass
 
         def postprocess(self, values):
@@ -132,15 +145,15 @@ class ValueDownsamplers(DownsamplersBase):
         def initialize(self):
             self.count = 0
 
-        def update(self, datum):
-            if isinstance(datum, dict) and self.key in datum:
-                datum = datum[self.key]
+        def update(self, time, value):
+            if isinstance(value, dict) and self.key in value:
+                value = value[self.key]
             else:
-                datum = 1 if datum is not None else 0
+                value = 1 if value is not None else 0
 
-            self.count += datum
+            self.count += value
 
-        def finish(self, output):
+        def finish(self, output, timestamp, granularity):
             assert self.key not in output
             output[self.key] = self.count
 
@@ -154,22 +167,22 @@ class ValueDownsamplers(DownsamplersBase):
         def initialize(self):
             self.sum = None
 
-        def update(self, datum):
-            if isinstance(datum, dict) and self.key in datum:
-                datum = datum[self.key]
+        def update(self, time, value):
+            if isinstance(value, dict) and self.key in value:
+                value = value[self.key]
 
-            if datum is None:
+            if value is None:
                 return
 
             if self.sum is None:
                 self.sum = 0
 
             try:
-                self.sum += deserialize_numeric_value(datum)
+                self.sum += deserialize_numeric_value(value)
             except TypeError:
-                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'sum' downsampler." % repr(datum)))
+                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'sum' downsampler." % repr(value)))
 
-        def finish(self, output):
+        def finish(self, output, timestamp, granularity):
             assert self.key not in output
             output[self.key] = serialize_numeric_value(self.sum)
 
@@ -183,26 +196,26 @@ class ValueDownsamplers(DownsamplersBase):
         def initialize(self):
             self.sum = None
 
-        def update(self, datum):
-            if isinstance(datum, dict) and self.key in datum:
-                datum = datum[self.key]
+        def update(self, time, value):
+            if isinstance(value, dict) and self.key in value:
+                value = value[self.key]
                 square = False
             else:
                 square = True
 
-            if datum is None:
+            if value is None:
                 return
 
             if self.sum is None:
                 self.sum = 0
 
             try:
-                datum = deserialize_numeric_value(datum)
-                self.sum += datum * datum if square else datum
+                value = deserialize_numeric_value(value)
+                self.sum += value * value if square else value
             except TypeError:
-                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'sum_squares' downsampler." % repr(datum)))
+                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'sum_squares' downsampler." % repr(value)))
 
-        def finish(self, output):
+        def finish(self, output, timestamp, granularity):
             assert self.key not in output
             output[self.key] = serialize_numeric_value(self.sum)
 
@@ -216,25 +229,25 @@ class ValueDownsamplers(DownsamplersBase):
         def initialize(self):
             self.min = None
 
-        def update(self, datum):
-            if isinstance(datum, dict) and self.key in datum:
-                datum = datum[self.key]
+        def update(self, time, value):
+            if isinstance(value, dict) and self.key in value:
+                value = value[self.key]
 
-            if datum is None:
+            if value is None:
                 return
 
             try:
-                datum = deserialize_numeric_value(datum)
+                value = deserialize_numeric_value(value)
             except TypeError:
-                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'min' downsampler." % repr(datum)))
+                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'min' downsampler." % repr(value)))
                 return
 
             if self.min is None:
-                self.min = datum
+                self.min = value
             else:
-                self.min = min(self.min, datum)
+                self.min = min(self.min, value)
 
-        def finish(self, output):
+        def finish(self, output, timestamp, granularity):
             assert self.key not in output
             output[self.key] = serialize_numeric_value(self.min)
 
@@ -248,25 +261,25 @@ class ValueDownsamplers(DownsamplersBase):
         def initialize(self):
             self.max = None
 
-        def update(self, datum):
-            if isinstance(datum, dict) and self.key in datum:
-                datum = datum[self.key]
+        def update(self, time, value):
+            if isinstance(value, dict) and self.key in value:
+                value = value[self.key]
 
-            if datum is None:
+            if value is None:
                 return
 
             try:
-                datum = deserialize_numeric_value(datum)
+                value = deserialize_numeric_value(value)
             except TypeError:
-                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'max' downsampler." % repr(datum)))
+                warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'max' downsampler." % repr(value)))
                 return
 
             if self.max is None:
-                self.max = datum
+                self.max = value
             else:
-                self.max = max(self.max, datum)
+                self.max = max(self.max, value)
 
-        def finish(self, output):
+        def finish(self, output, timestamp, granularity):
             assert self.key not in output
             output[self.key] = serialize_numeric_value(self.max)
 
@@ -326,6 +339,9 @@ class TimeDownsamplers(DownsamplersBase):
         def __init__(self):
             self.key = api.TIME_DOWNSAMPLERS[self.name]
 
+        def _from_datetime(self, dt):
+            return int(calendar.timegm(dt.utctimetuple()))
+
         def _to_datetime(self, timestamp):
             return datetime.datetime.fromtimestamp(int(timestamp), pytz.utc)
 
@@ -340,13 +356,23 @@ class TimeDownsamplers(DownsamplersBase):
             self.count = 0
             self.sum = 0
 
-        def update(self, datum):
-            self.count += 1
-            self.sum += datum
+        def update(self, time, value):
+            if isinstance(time, dict) and self.key in time:
+                time = self._from_datetime(time[self.key])
+                count = value[api.VALUE_DOWNSAMPLERS['count']]
 
-        def finish(self, output):
+                self.count += count
+                self.sum += time * count
+            else:
+                self.count += 1 if value is not None else 0
+                self.sum += self._from_datetime(time) if value is not None else 0
+
+        def finish(self, output, timestamp, granularity):
             assert self.key not in output
-            output[self.key] = self._to_datetime(float(self.sum) / self.count)
+            if self.count > 0:
+                output[self.key] = self._to_datetime(float(self.sum) / self.count)
+            else:
+                output[self.key] = middle_timestamp(timestamp, granularity)
 
     class First(_Base):
         """
@@ -358,13 +384,16 @@ class TimeDownsamplers(DownsamplersBase):
         def initialize(self):
             self.first = None
 
-        def update(self, datum):
-            if self.first is None:
-                self.first = datum
+        def update(self, time, value):
+            if isinstance(time, dict) and self.key in time:
+                time = time[self.key]
 
-        def finish(self, output):
+            if self.first is None:
+                self.first = time
+
+        def finish(self, output, timestamp, granularity):
             assert self.key not in output
-            output[self.key] = self._to_datetime(self.first)
+            output[self.key] = self.first
 
     class Last(_Base):
         """
@@ -376,12 +405,15 @@ class TimeDownsamplers(DownsamplersBase):
         def initialize(self):
             self.last = None
 
-        def update(self, datum):
-            self.last = datum
+        def update(self, time, value):
+            if isinstance(time, dict) and self.key in time:
+                time = time[self.key]
 
-        def finish(self, output):
+            self.last = time
+
+        def finish(self, output, timestamp, granularity):
             assert self.key not in output
-            output[self.key] = self._to_datetime(self.last)
+            output[self.key] = self.last
 
 
 class DerivationOperators(object):
@@ -1795,9 +1827,9 @@ class Backend(object):
             value = {}
             time = {}
             for x in value_downsamplers:
-                x.finish(value)
+                x.finish(value, timestamp, granularity)
             for x in time_downsamplers:
-                x.finish(time)
+                x.finish(time, timestamp, granularity)
 
             for x in value_downsamplers:
                 x.postprocess(value)
@@ -1852,9 +1884,9 @@ class Backend(object):
             # Insert NULL values into empty buckets
             while current_null_bucket < current_granularity_period_timestamp:
                 for x in value_downsamplers:
-                    x.update(None)
+                    x.update(middle_timestamp(current_null_bucket, granularity), None)
                 for x in time_downsamplers:
-                    x.update(int(calendar.timegm(current_null_bucket.utctimetuple())))
+                    x.update(middle_timestamp(current_null_bucket, granularity), None)
 
                 store_downsampled_datapoint(current_null_bucket)
 
@@ -1869,10 +1901,11 @@ class Backend(object):
             )
 
             # Update all downsamplers for the current datapoint
+            ts = datapoint.get('t', datapoint['_id'].generation_time)
             for x in value_downsamplers:
-                x.update(datapoint['v'])
+                x.update(ts, datapoint['v'])
             for x in time_downsamplers:
-                x.update(int(calendar.timegm(ts.utctimetuple())))
+                x.update(ts, datapoint['v'])
 
         if current_granularity_period_timestamp is not None:
             store_downsampled_datapoint(current_granularity_period_timestamp)
@@ -1880,9 +1913,9 @@ class Backend(object):
             # Insert NULL values into empty buckets
             while current_null_bucket < until_timestamp:
                 for x in value_downsamplers:
-                    x.update(None)
+                    x.update(middle_timestamp(current_null_bucket, granularity), None)
                 for x in time_downsamplers:
-                    x.update(int(calendar.timegm(current_null_bucket.utctimetuple())))
+                    x.update(middle_timestamp(current_null_bucket, granularity), None)
 
                 store_downsampled_datapoint(current_null_bucket)
 
