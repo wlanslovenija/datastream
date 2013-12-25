@@ -963,7 +963,7 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(data[0]['t']['z'], ts) # last
         self.assertEqual(data[0]['t']['m'], ts) # mean
         self.assertEqual(data[0]['v']['c'], 5) # count
-        self.assertEqual(data[0]['v']['d'], 2.5) # standard deviation
+        self.assertAlmostEqual(data[0]['v']['d'], 1.5811388300841898) # standard deviation
         self.assertEqual(data[0]['v']['m'], 3.0) # mean
         self.assertEqual(data[0]['v']['l'], 1) # minimum
         self.assertEqual(data[0]['v']['q'], 55) # sum of squares
