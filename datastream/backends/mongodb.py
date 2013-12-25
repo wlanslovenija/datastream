@@ -10,6 +10,7 @@ import struct
 import time
 import uuid
 import warnings
+import math
 
 import pytz
 
@@ -323,7 +324,7 @@ class ValueDownsamplers(DownsamplersBase):
                 s = float(deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum']]))
                 ss = float(deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum_squares']]))
 
-                values[self.key] = (n * ss - s ** 2) / (n * (n - 1))
+                values[self.key] = math.sqrt((n * ss - s ** 2) / (n * (n - 1)))
 
 
 class TimeDownsamplers(DownsamplersBase):
