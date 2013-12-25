@@ -182,7 +182,6 @@ RESERVED_TAGS = (
 
 VALUE_DOWNSAMPLERS = {
     'mean': 'm', # average of all datapoints
-    'median': 'e', # median of all datapoints
     'sum': 's', # sum of all datapoints
     'min': 'l', # minimum value of all dataponts (key mnemonic: l for lower)
     'max': 'u', # maximum value of all datapoints (key mnemonic: u for upper)
@@ -197,11 +196,9 @@ VALUE_DOWNSAMPLERS = {
 # Count of timestamps is the same as count of values
 TIME_DOWNSAMPLERS = {
     'mean': 'm', # average of all timestamps
-    'median': 'e', # median of all timestamps
     'first': 'a', # the first timestamp of all datapoints (key mnemonic: a is the first in the alphabet)
     'last': 'z', # the last timestamp of all datapoints (key mnemonic: z is the last in the alphabet)
     'intervals_mean': 'i', # average of all interval lengths (key mnemonic: i for interval)
-    'intervals_median': 'n', # median of all interval lengths (key mnemonic: mediaN)
     'intervals_min': 'l', # minimum of all interval lengths (key mnemonic: l for lower)
     'intervals_max': 'u', # maximum of all interval lengths (key mnemonic: u for upper)
     'intervals_sum_squares': 'q', # sum of squares of all interval lengths
