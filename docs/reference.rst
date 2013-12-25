@@ -57,10 +57,6 @@ Value Downsamplers
 
     Average of all datapoints.
 
-.. method:: median(key: e)
-
-    Median of all datapoints.
-
 .. method:: sum(key: s)
 
     Sum of all datapoints.
@@ -104,10 +100,6 @@ Time Downsamplers
 .. method:: mean(key: m)
 
     Average of all timestamps.
-
-.. method:: median(key: e)
-
-    Median of all timestamps.
 
 .. method:: first(key: a, is the first in the alphabet)
 
