@@ -1398,6 +1398,19 @@ class Backend(object):
         # convert it to string and write a string into the database
         if isinstance(value, numbers.Number):
             value = serialize_numeric_value(value)
+        elif isinstance(value, dict):
+            # TODO: This should be changed when we add support for types
+            # Assume that we are inserting a downsampled datapoint
+            valid_keys = set()
+            for ds_name in stream.value_downsamplers:
+                key = api.VALUE_DOWNSAMPLERS[ds_name]
+                valid_keys.add(key)
+                if key not in value:
+                    raise ValueError("Missing datapoint value for downsampler '%s'!" % ds_name)
+
+            for key in value:
+                if key not in valid_keys:
+                    raise ValueError("Unknown downsampled datapoint key '%s'!" % key)
 
         # Append the datapoint into appropriate granularity
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
