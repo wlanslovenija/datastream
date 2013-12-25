@@ -133,10 +133,12 @@ class ValueDownsamplers(DownsamplersBase):
             self.count = 0
 
         def update(self, datum):
-            if datum is None:
-                return
+            if isinstance(datum, dict) and self.key in datum:
+                datum = datum[self.key]
+            else:
+                datum = 1 if datum is not None else 0
 
-            self.count += 1
+            self.count += datum
 
         def finish(self, output):
             assert self.key not in output
@@ -153,6 +155,9 @@ class ValueDownsamplers(DownsamplersBase):
             self.sum = None
 
         def update(self, datum):
+            if isinstance(datum, dict) and self.key in datum:
+                datum = datum[self.key]
+
             if datum is None:
                 return
 
@@ -179,6 +184,12 @@ class ValueDownsamplers(DownsamplersBase):
             self.sum = None
 
         def update(self, datum):
+            if isinstance(datum, dict) and self.key in datum:
+                datum = datum[self.key]
+                square = False
+            else:
+                square = True
+
             if datum is None:
                 return
 
@@ -187,7 +198,7 @@ class ValueDownsamplers(DownsamplersBase):
 
             try:
                 datum = deserialize_numeric_value(datum)
-                self.sum += datum * datum
+                self.sum += datum * datum if square else datum
             except TypeError:
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'sum_squares' downsampler." % repr(datum)))
 
@@ -206,6 +217,9 @@ class ValueDownsamplers(DownsamplersBase):
             self.min = None
 
         def update(self, datum):
+            if isinstance(datum, dict) and self.key in datum:
+                datum = datum[self.key]
+
             if datum is None:
                 return
 
@@ -235,6 +249,9 @@ class ValueDownsamplers(DownsamplersBase):
             self.max = None
 
         def update(self, datum):
+            if isinstance(datum, dict) and self.key in datum:
+                datum = datum[self.key]
+
             if datum is None:
                 return
 
@@ -1731,7 +1748,8 @@ class Backend(object):
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
 
         # Determine the interval (one or more granularity periods) that needs downsampling
-        datapoints = getattr(db.datapoints, stream.highest_granularity.name)
+        higher_granularity = api.Granularity.values[api.Granularity.values.index(granularity) - 1]
+        datapoints = getattr(db.datapoints, higher_granularity.name)
         state = stream.downsample_state[granularity.name]
         if state.timestamp is not None:
             datapoints = datapoints.find({
