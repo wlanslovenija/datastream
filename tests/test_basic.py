@@ -848,7 +848,7 @@ class BasicTest(MongoDBBasicTest):
 
         self.assertEqual(data[0]['v']['c'], 10)    # count
         self.assertEqual(data[0]['v']['d'], 0.0)   # standard deviation
-        self.assertAlmostEqual(data[0]['v']['m'], float(340282366920938463463374607431768211456))  # mean
+        self.assertAlmostEqual(data[0]['v']['m'], 340282366920938463463374607431768211456)  # mean
         self.assertEqual(data[0]['v']['l'], 340282366920938463463374607431768211456)  # minimum
         self.assertEqual(data[0]['v']['q'], 10 * (340282366920938463463374607431768211456 ** 2)) # sum of squares
         self.assertEqual(data[0]['v']['s'], 340282366920938463463374607431768211456 * 10)  # sum
@@ -963,7 +963,7 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(data[0]['t']['z'], ts) # last
         self.assertEqual(data[0]['t']['m'], ts) # mean
         self.assertEqual(data[0]['v']['c'], 5) # count
-        self.assertAlmostEqual(data[0]['v']['d'], 1.5811388300841898) # standard deviation
+        self.assertAlmostEqual(data[0]['v']['d'], decimal.Decimal('1.5811388300841898')) # standard deviation
         self.assertEqual(data[0]['v']['m'], 3.0) # mean
         self.assertEqual(data[0]['v']['l'], 1) # minimum
         self.assertEqual(data[0]['v']['q'], 55) # sum of squares
@@ -1036,6 +1036,22 @@ class BasicTest(MongoDBBasicTest):
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 10, 12, 0, 1))
 
     def test_downsamplers(self):
+        # Test with floats that have issues with exact representation
+        stream_id = self.datastream.ensure_stream({'name': 'small'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
+        ts0 = datetime.datetime(2000, 1, 1, 0, 0, 0, tzinfo=pytz.utc)
+        ts = ts0
+
+        for i in xrange(100):
+            self.datastream.append(stream_id, 0.05, ts)
+            ts += datetime.timedelta(seconds=1)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            self.datastream.downsample_streams(until=ts)
+
+            self.assertEqual(any([x.category == exceptions.InvalidValueWarning for x in w]), False)
+
+        # Test with random numbers
         random.seed(42)
         points = 43205
         interval = 2
@@ -1060,7 +1076,7 @@ class BasicTest(MongoDBBasicTest):
 
         def check_values(data, n):
             self.assertEqual(data[0]['v']['c'], n) # count
-            self.assertAlmostEqual(data[0]['v']['m'], float(sum(src_data[:n])) / n) # mean
+            self.assertAlmostEqual(data[0]['v']['m'], decimal.Decimal(sum(src_data[:n])) / n) # mean
             self.assertEqual(data[0]['v']['l'], min(src_data[:n])) # minimum
             self.assertEqual(data[0]['v']['u'], max(src_data[:n])) # maximum
             self.assertEqual(data[0]['v']['s'], sum(src_data[:n])) # sum

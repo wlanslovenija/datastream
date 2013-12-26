@@ -30,6 +30,8 @@ MINIMUM_INTEGER = -2 ** 63
 ZERO_TIMEDELTA = datetime.timedelta()
 ONE_SECOND_TIMEDELTA = datetime.timedelta(seconds=1)
 
+DECIMAL_PRECISION = 64
+
 
 def deserialize_numeric_value(value):
     """
@@ -37,20 +39,30 @@ def deserialize_numeric_value(value):
     a conversion is not possible.
     """
 
-    if isinstance(value, (int, long, float)):
-        return value
-    elif isinstance(value, decimal.Decimal):
-        return value
-    elif isinstance(value, basestring):
-        try:
-            return int(value)
-        except ValueError:
+    with decimal.localcontext() as ctx:
+        ctx.prec = DECIMAL_PRECISION
+
+        if isinstance(value, (int, long)):
+            return value
+        elif isinstance(value, float):
+            decimal_value = +decimal.Decimal(value)
+            int_value = int(decimal_value)
+            if int_value == decimal_value:
+                return int_value
+            else:
+                return decimal_value
+        elif isinstance(value, decimal.Decimal):
+            return value
+        elif isinstance(value, basestring):
             try:
-                return decimal.Decimal(value)
-            except decimal.InvalidOperation:
-                raise TypeError
-    else:
-        raise TypeError
+                return int(value)
+            except ValueError:
+                try:
+                    return +decimal.Decimal(value)
+                except decimal.InvalidOperation:
+                    raise TypeError
+        else:
+            raise TypeError
 
 
 def serialize_numeric_value(value):
@@ -68,7 +80,11 @@ def serialize_numeric_value(value):
         if MINIMUM_INTEGER <= value <= MAXIMUM_INTEGER and int_value == value:
             return int_value
         else:
-            return str(value)
+            float_value = float(value)
+            if value == decimal.Decimal(float_value):
+                return float_value
+            else:
+                return str(value)
     else:
         return value
 
@@ -133,8 +149,9 @@ class ValueDownsamplers(DownsamplersBase):
         Base class for value downsamplers.
         """
 
-        def __init__(self):
+        def __init__(self, stream):
             self.key = api.VALUE_DOWNSAMPLERS[self.name]
+            self.stream = stream
 
     class Count(_Base):
         """
@@ -156,7 +173,7 @@ class ValueDownsamplers(DownsamplersBase):
 
         def finish(self, output, timestamp, granularity):
             assert self.key not in output
-            output[self.key] = self.count
+            output[self.key] = serialize_numeric_value(self.count)
 
     class Sum(_Base):
         """
@@ -179,7 +196,9 @@ class ValueDownsamplers(DownsamplersBase):
                 self.sum = 0
 
             try:
-                self.sum += deserialize_numeric_value(value)
+                with decimal.localcontext() as ctx:
+                    ctx.prec = DECIMAL_PRECISION
+                    self.sum += deserialize_numeric_value(value)
             except TypeError:
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'sum' downsampler." % repr(value)))
 
@@ -211,8 +230,10 @@ class ValueDownsamplers(DownsamplersBase):
                 self.sum = 0
 
             try:
-                value = deserialize_numeric_value(value)
-                self.sum += value * value if square else value
+                with decimal.localcontext() as ctx:
+                    ctx.prec = DECIMAL_PRECISION
+                    value = deserialize_numeric_value(value)
+                    self.sum += value * value if square else value
             except TypeError:
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'sum_squares' downsampler." % repr(value)))
 
@@ -294,12 +315,14 @@ class ValueDownsamplers(DownsamplersBase):
 
         def postprocess(self, values):
             assert 'm' not in values
-            n = float(values[api.VALUE_DOWNSAMPLERS['count']])
+            n = deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['count']])
 
             if n > 0:
-                s = float(deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum']]))
+                s = deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum']])
 
-                values[self.key] = s / n
+                with decimal.localcontext() as ctx:
+                    ctx.prec = DECIMAL_PRECISION
+                    values[self.key] = serialize_numeric_value(decimal.Decimal(s) / n)
             else:
                 values[self.key] = None
 
@@ -313,18 +336,28 @@ class ValueDownsamplers(DownsamplersBase):
         dependencies = ('sum', 'count', 'sum_squares')
 
         def postprocess(self, values):
-            n = float(values[api.VALUE_DOWNSAMPLERS['count']])
             assert self.key not in values
+            n = deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['count']])
 
             if n == 0:
                 values[self.key] = None
             elif n == 1:
                 values[self.key] = 0
             else:
-                s = float(deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum']]))
-                ss = float(deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum_squares']]))
+                s = deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum']])
+                ss = deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum_squares']])
 
-                values[self.key] = math.sqrt((n * ss - s ** 2) / (n * (n - 1)))
+                with decimal.localcontext() as ctx:
+                    ctx.prec = DECIMAL_PRECISION
+                    try:
+                        std = (n * ss - s ** 2) / decimal.Decimal(n * (n - 1))
+                        if abs(std) < decimal.Decimal('0.00000001'):
+                            std = decimal.Decimal(0)
+
+                        values[self.key] = serialize_numeric_value(std.sqrt())
+                    except decimal.InvalidOperation:
+                        warnings.warn(exceptions.InvalidValueWarning("Failed to compute standard deviation, setting to zero (stream %d)." % self.stream.pk))
+                        values[self.key] = 0
 
 
 class TimeDownsamplers(DownsamplersBase):
@@ -337,8 +370,9 @@ class TimeDownsamplers(DownsamplersBase):
         Base class for time downsamplers.
         """
 
-        def __init__(self):
+        def __init__(self, stream):
             self.key = api.TIME_DOWNSAMPLERS[self.name]
+            self.stream = stream
 
         def _from_datetime(self, dt):
             return int(calendar.timegm(dt.utctimetuple()))
@@ -520,7 +554,7 @@ class DerivationOperators(object):
             if isinstance(value, dict):
                 # TODO: This is probably not right, currently only the mean is taken into account
                 try:
-                    value = float(deserialize_numeric_value(value[api.VALUE_DOWNSAMPLERS['sum']])) / value[api.VALUE_DOWNSAMPLERS['count']]
+                    value = decimal.Decimal(deserialize_numeric_value(value[api.VALUE_DOWNSAMPLERS['sum']])) / value[api.VALUE_DOWNSAMPLERS['count']]
                     timestamp = timestamp[api.TIME_DOWNSAMPLERS['last']]
                 except KeyError:
                     pass
@@ -625,7 +659,7 @@ class DerivationOperators(object):
 
             if self._stream.derive_state is not None:
                 # We already have a previous value, compute derivative
-                delta = float((timestamp - self._stream.derive_state['t']).total_seconds())
+                delta = decimal.Decimal((timestamp - self._stream.derive_state['t']).total_seconds())
                 if delta != 0:
                     derivative = (value - deserialize_numeric_value(self._stream.derive_state['v'])) / delta
                     self._backend._append(self._stream, derivative, timestamp)
@@ -772,7 +806,7 @@ class DerivationOperators(object):
                             vdelta = None
 
                     if vdelta is not None:
-                        tdelta = float((timestamp - self._stream.derive_state['t']).total_seconds())
+                        tdelta = decimal.Decimal((timestamp - self._stream.derive_state['t']).total_seconds())
                         if tdelta != 0:
                             derivative = vdelta / tdelta
                             self._backend._append(self._stream, derivative, timestamp)
@@ -1408,6 +1442,8 @@ class Backend(object):
                 valid_keys.add(key)
                 if key not in value:
                     raise ValueError("Missing datapoint value for downsampler '%s'!" % ds_name)
+                else:
+                    value[key] = serialize_numeric_value(value[key])
 
             for key in value:
                 if key not in valid_keys:
@@ -1826,11 +1862,11 @@ class Backend(object):
         value_downsamplers = []
         for downsampler in ValueDownsamplers.values:
             if downsampler.name in stream.value_downsamplers:
-                value_downsamplers.append(downsampler())
+                value_downsamplers.append(downsampler(stream))
 
         time_downsamplers = []
         for downsampler in TimeDownsamplers.values:
-            time_downsamplers.append(downsampler())
+            time_downsamplers.append(downsampler(stream))
 
         # Pack stream identifier to be used for object id generation
         stream_id = struct.pack('>Q', stream.id)
