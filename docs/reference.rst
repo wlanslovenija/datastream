@@ -131,40 +131,6 @@ Derive Operators
 Exceptions
 ----------
 
-.. py:module:: datastream.exceptions
-
-.. autoclass:: DatastreamException
-
-.. autoclass:: StreamNotFound
-
-.. autoclass:: MultipleStreamsReturned
-
-.. autoclass:: InconsistentStreamConfiguration
-
-.. autoclass:: OutstandingDependenciesError
-
-.. autoclass:: UnsupportedDownsampler
-
-.. autoclass:: UnsupportedGranularity
-
-.. autoclass:: UnsupportedDeriveOperator
-
-.. autoclass:: ReservedTagNameError
-
-.. autoclass:: InvalidTimestamp
-
-.. autoclass:: IncompatibleGranularities
-
-.. autoclass:: AppendToDerivedStreamNotAllowed
-
-.. autoclass:: InvalidOperatorArguments
-
-.. autoclass:: LockExpiredMidMaintenance
-
-.. autoclass:: StreamAppendContended
-
-.. autoclass:: DatastreamWarning
-
-.. autoclass:: InvalidValueWarning
-
-.. autoclass:: InternalInconsistencyWarning
+.. automodule:: datastream.exceptions
+   :members:
+   :member-order: bysource
