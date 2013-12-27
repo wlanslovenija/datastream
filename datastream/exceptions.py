@@ -113,6 +113,13 @@ class LockExpiredMidMaintenance(DatastreamException):
     pass
 
 
+class StreamAppendContended(DatastreamException):
+    """
+    Raised when too many processes are trying to append to the same stream.
+    """
+    pass
+
+
 class DatastreamWarning(RuntimeWarning):
     """
     The base class for all datastream API runtime warnings.

@@ -159,6 +159,10 @@ Exceptions
 
 .. autoclass:: InvalidOperatorArguments
 
+.. autoclass:: LockExpiredMidMaintenance
+
+.. autoclass:: StreamAppendContended
+
 .. autoclass:: DatastreamWarning
 
 .. autoclass:: InvalidValueWarning

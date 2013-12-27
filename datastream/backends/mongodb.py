@@ -15,7 +15,7 @@ import math
 import pytz
 
 import pymongo
-from bson import objectid
+from bson import objectid, son, timestamp as bson_timestamp
 
 import mongoengine
 
@@ -1455,31 +1455,38 @@ class Backend(object):
                 if key not in valid_keys:
                     raise ValueError("Unknown downsampled datapoint key '%s'!" % key)
 
-        # Append the datapoint into appropriate granularity
-        db = mongoengine.connection.get_db(DATABASE_ALIAS)
-        collection = getattr(db.datapoints, stream.highest_granularity.name)
-        if timestamp is None and self._time_offset == ZERO_TIMEDELTA:
-            datapoint = {'m': stream.id, 'v': value}
-        else:
-            object_id = self._generate_object_id(timestamp)
+        object_id = self._generate_object_id(timestamp)
 
+        for i in xrange(10):
             if check_timestamp:
-                # TODO: There is a race condition here, between check and insert
                 if stream.latest_datapoint and object_id.generation_time < stream.latest_datapoint:
                     raise exceptions.InvalidTimestamp("Datapoint timestamp must be equal or larger (newer) than the latest one '%s': %s" % (stream.latest_datapoint, object_id.generation_time))
 
-            datapoint = {'_id': object_id, 'm': stream.id, 'v': value}
+            # Update last datapoint metadata
+            mstream = Stream._get_collection().find_and_modify(
+                {'_id': stream.pk, 'latest_datapoint': stream.latest_datapoint},
+                {'$set': {'latest_datapoint': object_id.generation_time}}
+            )
+            if not mstream:
+                stream.reload()
+                continue
+            else:
+                break
+        else:
+            raise exceptions.StreamAppendContended
 
-        datapoint['_id'] = collection.insert(datapoint, w=1)
-
-        # Update latest/earliest datapoint timestamp metadata
-        stream.latest_datapoint = datapoint['_id'].generation_time
         if stream.earliest_datapoint is None:
             stream.earliest_datapoint = stream.latest_datapoint
-        stream.save()
+            stream.save()
+
+        # Append the datapoint into appropriate granularity
+        db = mongoengine.connection.get_db(DATABASE_ALIAS)
+        collection = getattr(db.datapoints, stream.highest_granularity.name)
+        datapoint = {'_id': object_id, 'm': stream.id, 'v': value}
+        collection.insert(datapoint, w=1)
 
         # Process contributions to other streams
-        self._process_contributes_to(stream, datapoint['_id'].generation_time, value, stream.highest_granularity)
+        self._process_contributes_to(stream, object_id.generation_time, value, stream.highest_granularity)
 
         ret = {
             'stream_id': str(stream.external_id),
