@@ -106,6 +106,13 @@ class InvalidOperatorArguments(DatastreamException, ValueError):
     pass
 
 
+class LockExpiredMidMaintenance(DatastreamException):
+    """
+    Raised when a maintenance lock expires inside a maintenance operation.
+    """
+    pass
+
+
 class DatastreamWarning(RuntimeWarning):
     """
     The base class for all datastream API runtime warnings.

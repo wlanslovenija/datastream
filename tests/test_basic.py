@@ -1,9 +1,12 @@
+import collections
 import datetime
 import decimal
 import random
 import time
 import unittest
 import warnings
+import sys
+import threading
 
 import pytz
 
@@ -1034,6 +1037,41 @@ class BasicTest(MongoDBBasicTest):
 
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 10, 12, 0, 0))
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 10, 12, 0, 1))
+
+    def test_concurrent(self):
+        for i in xrange(10):
+            stream_id = self.datastream.ensure_stream({'name': i}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
+            ts = datetime.datetime(2000, 1, 1, 0, 0, 0, tzinfo=pytz.utc)
+            for j in xrange(1000):
+                self.datastream.append(stream_id, 1, ts)
+                ts += datetime.timedelta(seconds=4)
+
+        def worker(results):
+            try:
+                datapoints = self.datastream.downsample_streams(return_datapoints=True)
+                results.append(len(datapoints))
+            except:
+                results.append(sys.exc_info())
+
+        threads = []
+        results = collections.deque()
+        for i in xrange(5):
+            t = threading.Thread(target=worker, args=(results,))
+            threads.append(t)
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        if results:
+            all_datapoints = 0
+            for result in results:
+                if isinstance(result, int):
+                    all_datapoints += result
+                else:
+                    raise result[1], None, result[2]
+
+            self.assertEqual(all_datapoints, 4720)
 
     def test_downsamplers(self):
         # Test with floats that have issues with exact representation
