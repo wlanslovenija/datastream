@@ -1059,16 +1059,11 @@ class BasicTest(MongoDBBasicTest):
 
     def test_concurrent_append(self):
         stream_id = self.datastream.ensure_stream({'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
-        thread_started = threading.Condition()
 
         def worker_append(minute, sleep):
             ts = datetime.datetime(2000, 1, 1, 0, minute, 0, tzinfo=pytz.utc)
             self.datastream.backend._test_concurrency.sleep = sleep
             try:
-                thread_started.acquire()
-                thread_started.notify()
-                thread_started.release()
-
                 self.datastream.append(stream_id, 1, ts)
             finally:
                 self.datastream.backend._test_concurrency.sleep = False
@@ -1096,12 +1091,9 @@ class BasicTest(MongoDBBasicTest):
         time.sleep(mongodb.DOWNSAMPLE_SAFETY_MARGIN + 5)
         # First thread should sleep half of safety margin
         t1 = threading.Thread(target=worker_append, args=(1, True))
-        # Wait for the first thread to start
-        thread_started.acquire()
         t1.start()
-        thread_started.wait()
-        thread_started.release()
-        time.sleep(1)
+        # Wait for the first thread to start
+        time.sleep(2)
         # Second thread should not sleep
         worker_append(5, False)
         # Start downsampling before the first thread inserts
