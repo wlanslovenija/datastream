@@ -6,6 +6,7 @@ import inspect
 import numbers
 import os
 import struct
+import sys
 import threading
 import time
 import uuid
@@ -47,7 +48,7 @@ def deserialize_numeric_value(value):
         if isinstance(value, (int, long)):
             return value
         elif isinstance(value, float):
-            decimal_value = +decimal.Decimal(value)
+            decimal_value = +float_to_decimal(value)
             int_value = int(decimal_value)
             if int_value == decimal_value:
                 return int_value
@@ -83,7 +84,7 @@ def serialize_numeric_value(value):
             return int_value
         else:
             float_value = float(value)
-            if value == decimal.Decimal(float_value):
+            if value == float_to_decimal(float_value):
                 return float_value
             else:
                 return str(value)
@@ -102,6 +103,36 @@ def middle_timestamp(dt, granularity):
     """
 
     return dt + datetime.timedelta(seconds=granularity.duration_in_seconds() // 2)
+
+
+def total_seconds(delta):
+    if sys.version_info < (2, 7):
+        return (delta.microseconds + (delta.seconds + delta.days * 24 * 3600) * 1e6) / 1e6
+    else:
+        return delta.total_seconds()
+
+
+def float_to_decimal(f):
+    if sys.version_info < (2, 7):
+        # See http://docs.python.org/release/2.6.7/library/decimal.html#decimal-faq
+        n, d = f.as_integer_ratio()
+        numerator, denominator = decimal.Decimal(n), decimal.Decimal(d)
+        ctx = decimal.Context(prec=60)
+        result = ctx.divide(numerator, denominator)
+        while ctx.flags[decimal.Inexact]:
+            ctx.flags[decimal.Inexact] = False
+            ctx.prec *= 2
+            result = ctx.divide(numerator, denominator)
+        return result
+    else:
+        return decimal.Decimal(f)
+
+
+def to_decimal(v):
+    if isinstance(v, float):
+        return float_to_decimal(v)
+    else:
+        return decimal.Decimal(v)
 
 
 class DownsamplersBase(object):
@@ -324,7 +355,7 @@ class ValueDownsamplers(DownsamplersBase):
 
                 with decimal.localcontext() as ctx:
                     ctx.prec = DECIMAL_PRECISION
-                    values[self.key] = serialize_numeric_value(decimal.Decimal(s) / n)
+                    values[self.key] = serialize_numeric_value(to_decimal(s) / n)
             else:
                 values[self.key] = None
 
@@ -352,7 +383,7 @@ class ValueDownsamplers(DownsamplersBase):
                 with decimal.localcontext() as ctx:
                     ctx.prec = DECIMAL_PRECISION
                     try:
-                        std = (n * ss - s ** 2) / decimal.Decimal(n * (n - 1))
+                        std = (n * ss - s ** 2) / to_decimal(n * (n - 1))
                         if abs(std) < decimal.Decimal('0.00000001'):
                             std = decimal.Decimal(0)
 
@@ -556,7 +587,7 @@ class DerivationOperators(object):
             if isinstance(value, dict):
                 # TODO: This is probably not right, currently only the mean is taken into account
                 try:
-                    value = decimal.Decimal(deserialize_numeric_value(value[api.VALUE_DOWNSAMPLERS['sum']])) / value[api.VALUE_DOWNSAMPLERS['count']]
+                    value = to_decimal(deserialize_numeric_value(value[api.VALUE_DOWNSAMPLERS['sum']])) / value[api.VALUE_DOWNSAMPLERS['count']]
                     timestamp = timestamp[api.TIME_DOWNSAMPLERS['last']]
                 except KeyError:
                     pass
@@ -661,7 +692,7 @@ class DerivationOperators(object):
 
             if self._stream.derive_state is not None:
                 # We already have a previous value, compute derivative
-                delta = decimal.Decimal((timestamp - self._stream.derive_state['t']).total_seconds())
+                delta = to_decimal(total_seconds(timestamp - self._stream.derive_state['t']))
                 if delta != 0:
                     derivative = (value - deserialize_numeric_value(self._stream.derive_state['v'])) / delta
                     self._backend._append(self._stream, derivative, timestamp)
@@ -808,7 +839,7 @@ class DerivationOperators(object):
                             vdelta = None
 
                     if vdelta is not None:
-                        tdelta = decimal.Decimal((timestamp - self._stream.derive_state['t']).total_seconds())
+                        tdelta = to_decimal(total_seconds(timestamp - self._stream.derive_state['t']))
                         if tdelta != 0:
                             derivative = vdelta / tdelta
                             self._backend._append(self._stream, derivative, timestamp)
@@ -1518,7 +1549,7 @@ class Backend(object):
         datapoint = {'_id': object_id, 'm': stream.id, 'v': value}
         collection.insert(datapoint, w=1)
 
-        if (datetime.datetime.now(pytz.utc) - timestamp_check_time).total_seconds() > DOWNSAMPLE_SAFETY_MARGIN:
+        if total_seconds(datetime.datetime.now(pytz.utc) - timestamp_check_time) > DOWNSAMPLE_SAFETY_MARGIN:
             warnings.warn(exceptions.DownsampleConsistencyNotGuaranteed("Downsample safety margin of %d seconds exceeded in append." % DOWNSAMPLE_SAFETY_MARGIN))
 
         # Process contributions to other streams
@@ -1856,7 +1887,7 @@ class Backend(object):
             oid += struct.pack('>i', int(calendar.timegm(timestamp.utctimetuple())))
         else:
             # We add possible _time_offset which is used in debugging to artificially change time
-            oid += struct.pack('>i', int(time.time() + self._time_offset.total_seconds()))
+            oid += struct.pack('>i', int(time.time() + total_seconds(self._time_offset)))
 
         # 3 bytes machine
         oid += objectid.ObjectId._machine_bytes
@@ -1957,7 +1988,7 @@ class Backend(object):
             if locked_until < now:
                 # Lock has expired while we were processing; abort immediately
                 raise exceptions.LockExpiredMidMaintenance
-            elif (locked_until - now).total_seconds() <= MAINTENANCE_LOCK_DURATION // 2:
+            elif total_seconds(locked_until - now) <= MAINTENANCE_LOCK_DURATION // 2:
                 locked_until = now + datetime.timedelta(seconds=MAINTENANCE_LOCK_DURATION)
                 Stream.objects(pk=stream.pk).update(set___lock_mt=locked_until)
 

@@ -32,5 +32,11 @@ if __name__ == '__main__':
             'pymongo>=2.2.1',
             'pytz>=2012h',
         ],
+        tests_require=[
+            'mongoengine>=0.8.1,<0.8.2',
+            'pymongo>=2.2.1',
+            'pytz>=2012h',
+            'unittest2',
+        ],
         test_suite='tests',
     )

@@ -4,7 +4,6 @@ import datetime
 import decimal
 import random
 import time
-import unittest
 import warnings
 import sys
 import threading
@@ -17,6 +16,11 @@ import datastream
 from datastream import exceptions
 
 from datastream.backends import mongodb
+
+if sys.version_info < (2, 7):
+    import unittest2 as unittest
+else:
+    import unittest
 
 
 class MongoDBBasicTest(unittest.TestCase):
@@ -51,6 +55,13 @@ def time_offset(self, offset=datetime.timedelta(minutes=1)):
 
 #@unittest.skip("performing stress test")
 class BasicTest(MongoDBBasicTest):
+    def _test_data_types(self, data):
+        for d in data:
+            self.assertIsInstance(d['v'], (int, long, float, decimal.Decimal, dict, None.__class__))
+            if isinstance(d['v'], dict):
+                for v in d['v'].values():
+                    self.assertIsInstance(v, (int, long, float, decimal.Decimal, None.__class__))
+
     def test_basic(self):
         query_tags = {
             'name': 'foobar',
@@ -123,6 +134,8 @@ class BasicTest(MongoDBBasicTest):
 
         data = self.datastream.get_data(stream_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
         self.assertEqual(len(data), 1)
+        data = list(data)
+        self._test_data_types(data)
 
         self.assertEqual(len(self._callback_points), 1)
         cb_stream_id, cb_granularity, cb_datapoint = self._callback_points[0]
@@ -153,6 +166,8 @@ class BasicTest(MongoDBBasicTest):
             datetime.datetime.utcfromtimestamp(time.time()) + self.datastream.backend._time_offset,
         )
         self.assertEqual(len(data), 2)
+        data = list(data)
+        self._test_data_types(data)
         self.assertEqual(data[0]['v'], 42)
 
         data = self.datastream.get_data(
@@ -161,6 +176,8 @@ class BasicTest(MongoDBBasicTest):
             datetime.datetime.utcfromtimestamp(0),
         )
         self.assertEqual(len(data), 2)
+        data = list(data)
+        self._test_data_types(data)
         self.assertEqual(data[0]['v'], 42)
 
         stream = datastream.Stream(self.datastream.get_tags(stream_id))
@@ -193,6 +210,8 @@ class BasicTest(MongoDBBasicTest):
             datetime.datetime.utcfromtimestamp(time.time()) + self.datastream.backend._time_offset,
         )
         self.assertEqual(len(data), 1)
+        data = list(data)
+        self._test_data_types(data)
         self.assertItemsEqual(data[0]['v'].keys(), value_downsamplers_keys)
         self.assertItemsEqual(data[0]['t'].keys(), time_downsamplers_keys)
         self.assertItemsEqual(data[0], cb_datapoint)
@@ -204,6 +223,8 @@ class BasicTest(MongoDBBasicTest):
             datetime.datetime.utcfromtimestamp(0),
         )
         self.assertEqual(len(data), 1)
+        data = list(data)
+        self._test_data_types(data)
         self.assertItemsEqual(data[0]['v'].keys(), value_downsamplers_keys)
         self.assertItemsEqual(data[0]['t'].keys(), time_downsamplers_keys)
         self.assertItemsEqual(data[0], cb_datapoint)
@@ -218,6 +239,8 @@ class BasicTest(MongoDBBasicTest):
             value_downsamplers=('count',),
         )
         self.assertEqual(len(data), 1)
+        data = list(data)
+        self._test_data_types(data)
         self.assertItemsEqual(data[0]['v'].keys(), (datastream.VALUE_DOWNSAMPLERS['count'],))
         self.assertEqual(data[0]['v'][datastream.VALUE_DOWNSAMPLERS['count']], datapoint['v'][datastream.VALUE_DOWNSAMPLERS['count']])
         self.assertEqual(data[0]['t'], datapoint['t'])
@@ -229,6 +252,8 @@ class BasicTest(MongoDBBasicTest):
             time_downsamplers=('first',),
         )
         self.assertEqual(len(data), 1)
+        data = list(data)
+        self._test_data_types(data)
         self.assertItemsEqual(data[0]['v'], datapoint['v'])
         self.assertItemsEqual(data[0]['t'].keys(), (datastream.TIME_DOWNSAMPLERS['first'],))
         self.assertEqual(data[0]['t'][datastream.TIME_DOWNSAMPLERS['first']], datapoint['t'][datastream.TIME_DOWNSAMPLERS['first']])
@@ -241,6 +266,8 @@ class BasicTest(MongoDBBasicTest):
             time_downsamplers=('first',),
         )
         self.assertEqual(len(data), 1)
+        data = list(data)
+        self._test_data_types(data)
         self.assertItemsEqual(data[0]['v'].keys(), (datastream.VALUE_DOWNSAMPLERS['count'],))
         self.assertEqual(data[0]['v'][datastream.VALUE_DOWNSAMPLERS['count']], datapoint['v'][datastream.VALUE_DOWNSAMPLERS['count']])
         self.assertItemsEqual(data[0]['t'].keys(), (datastream.TIME_DOWNSAMPLERS['first'],))
@@ -253,6 +280,8 @@ class BasicTest(MongoDBBasicTest):
             value_downsamplers=(),
         )
         self.assertEqual(len(data), 1)
+        data = list(data)
+        # Not testing of data types because there are no values
         self.assertFalse('v' in data[0], data[0].get('v', None))
         self.assertEqual(data[0]['t'], datapoint['t'])
 
@@ -263,6 +292,8 @@ class BasicTest(MongoDBBasicTest):
             time_downsamplers=(),
         )
         self.assertEqual(len(data), 1)
+        data = list(data)
+        self._test_data_types(data)
         self.assertItemsEqual(data[0]['v'], datapoint['v'])
         self.assertFalse('t' in data[0], data[0].get('t', None))
 
@@ -274,6 +305,8 @@ class BasicTest(MongoDBBasicTest):
             time_downsamplers=(),
         )
         self.assertEqual(len(data), 1)
+        data = list(data)
+        # Not testing of data types because there are no values
         self.assertFalse('v' in data[0], data[0].get('v', None))
         self.assertFalse('t' in data[0], data[0].get('t', None))
 
@@ -441,15 +474,21 @@ class BasicTest(MongoDBBasicTest):
 
         # Test sum operator
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts1)
+        data = list(data)
+        self._test_data_types(data)
         self.assertEqual([x['v'] for x in data], [42, 50, 56, 64, 50, 112, 116])
 
         # Test derivative operator
         data = self.datastream.get_data(another_stream_id, self.datastream.Granularity.Seconds, start=ts1)
-        self.assertEqual([x['v'] for x in data], [4.0, 3.0, 4.0, -7.0, 7.5, 4.0])
+        data = list(data)
+        self._test_data_types(data)
+        self.assertEqual([x['v'] for x in data], [4.0, 3.0, 4.0, -7.0, decimal.Decimal('7.5'), 4.0])
 
         # Test results of chained streams
         data = self.datastream.get_data(chained_stream_id, self.datastream.Granularity.Seconds, start=ts1)
-        self.assertEqual([x['v'] for x in data], [29.0, 31.0, 36.0, 18.0, 77.5, 78.0])
+        data = list(data)
+        self._test_data_types(data)
+        self.assertEqual([x['v'] for x in data], [29.0, 31.0, 36.0, 18.0, decimal.Decimal('77.5'), 78.0])
 
         # Test named source streams
         streamA_id = self.datastream.ensure_stream({'name': 'fooA'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
@@ -475,6 +514,8 @@ class BasicTest(MongoDBBasicTest):
         self.datastream.append(streamB_id, 25, ts2)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts1)
+        data = list(data)
+        self._test_data_types(data)
         self.assertEqual([x['v'] for x in data], [42, 50])
 
         # Test invalid granularity specification
@@ -521,6 +562,8 @@ class BasicTest(MongoDBBasicTest):
             x = self.datastream.downsample_streams(until=ts + datetime.timedelta(hours=10))
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
+        data = list(data)
+        self._test_data_types(data)
         self.assertEqual([x['v'] for x in data], [10.0, 10.0, 10.0])
 
         # Test counter reset operator
@@ -540,6 +583,8 @@ class BasicTest(MongoDBBasicTest):
 
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         data = self.datastream.get_data(reset_stream_id, self.datastream.Granularity.Seconds, start=ts)
+        data = list(data)
+        self._test_data_types(data)
         self.assertEqual([x['v'] for x in data], [1, 1, 1])
 
         # Test counter derivative operator
@@ -574,6 +619,8 @@ class BasicTest(MongoDBBasicTest):
 
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
+        data = list(data)
+        self._test_data_types(data)
         self.assertEqual([x['v'] for x in data], [7.0, 251.0, 18.0, 11.0, 15.0])
 
         # Test stream backprocessing with the above uptime and data streams
@@ -606,6 +653,8 @@ class BasicTest(MongoDBBasicTest):
 
         self.datastream.backprocess_streams()
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
+        data = list(data)
+        self._test_data_types(data)
         self.assertEqual([x['v'] for x in data], [7.0, 251.0, 18.0, 11.0, 15.0])
 
         stream = datastream.Stream(self.datastream.get_tags(stream_id))
@@ -680,6 +729,10 @@ class BasicTest(MongoDBBasicTest):
 
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
+        data = list(data)
+
+        self._test_data_types(data)
+
         self.assertEqual(data[0]['v']['c'], 1)     # count
         self.assertEqual(data[0]['v']['d'], 0.0)   # standard deviation
         self.assertEqual(data[0]['v']['m'], 10.0)  # mean
@@ -728,6 +781,8 @@ class BasicTest(MongoDBBasicTest):
 
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         data = self.datastream.get_data(sum_stream_id, self.datastream.Granularity.Seconds, start=ts)
+        data = list(data)
+        self._test_data_types(data)
 
         self.assertEqual([x['v'] for x in data], [1, 11, 1, 1, 3])
 
@@ -761,6 +816,8 @@ class BasicTest(MongoDBBasicTest):
 
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         data = self.datastream.get_data(sum_stream_id, self.datastream.Granularity.Seconds, start=ts)
+        data = list(data)
+        self._test_data_types(data)
 
         self.assertEqual([x['v'] for x in data], [None, 10, None, None, 2])
 
@@ -777,6 +834,8 @@ class BasicTest(MongoDBBasicTest):
 
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         data = self.datastream.get_data(derivative_stream_id, self.datastream.Granularity.Seconds, start=ts)
+        data = list(data)
+        self._test_data_types(data)
 
         self.assertEqual([x['v'] for x in data], [None, None, None])
 
@@ -797,6 +856,8 @@ class BasicTest(MongoDBBasicTest):
 
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         data = self.datastream.get_data(counter_derivative_stream_id, self.datastream.Granularity.Seconds, start=ts)
+        data = list(data)
+        self._test_data_types(data)
 
         self.assertEqual([x['v'] for x in data], [None, None, None])
 
@@ -814,6 +875,8 @@ class BasicTest(MongoDBBasicTest):
 
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         data = self.datastream.get_data(reset_stream_id, self.datastream.Granularity.Seconds, start=ts)
+        data = list(data)
+        self._test_data_types(data)
 
         self.assertEqual([x['v'] for x in data], [1])
 
@@ -841,6 +904,8 @@ class BasicTest(MongoDBBasicTest):
 
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=ts)
+        data = list(data)
+        self._test_data_types(data)
 
         self.assertEqual([x['v']['m'] for x in data], [10.] + [None] * 9 + [20.] + [None] * 9 + [30.])
 
@@ -859,11 +924,15 @@ class BasicTest(MongoDBBasicTest):
 
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
+        data = list(data)
+        self._test_data_types(data)
 
         self.assertEqual(len(data), 40)
         self.assertEqual([x['v'] for x in data], [340282366920938463463374607431768211456] * 40)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
+        data = list(data)
+        self._test_data_types(data)
 
         self.assertEqual(data[0]['v']['c'], 10)    # count
         self.assertEqual(data[0]['v']['d'], 0.0)   # standard deviation
@@ -892,7 +961,9 @@ class BasicTest(MongoDBBasicTest):
 
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         data = self.datastream.get_data(sum_stream_id, self.datastream.Granularity.Seconds, start=ts)
+        data = list(data)
         self.assertEqual([x['v'] for x in data], [340282366920938463463374607431768211456 * 2] * 40)
+        self._test_data_types(data)
 
         # Derivative
         derivative_stream_id = self.datastream.ensure_stream(
@@ -907,6 +978,8 @@ class BasicTest(MongoDBBasicTest):
 
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         data = self.datastream.get_data(derivative_stream_id, self.datastream.Granularity.Seconds, start=ts)
+        data = list(data)
+        self._test_data_types(data)
 
         self.assertEqual([x['v'] for x in data], [0.0] * 39)
 
@@ -927,6 +1000,8 @@ class BasicTest(MongoDBBasicTest):
 
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         data = self.datastream.get_data(counter_derivative_stream_id, self.datastream.Granularity.Seconds, start=ts)
+        data = list(data)
+        self._test_data_types(data)
 
         self.assertEqual([x['v'] for x in data], [0.0] * 39)
 
@@ -959,12 +1034,15 @@ class BasicTest(MongoDBBasicTest):
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
         self.assertEqual(len(data), 6)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts, end=ts)
         self.assertEqual(len(data), 5)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=ts)
         self.assertEqual(len(data), 1)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=ts, end=ts)
         self.assertEqual(len(data), 0)
@@ -978,6 +1056,8 @@ class BasicTest(MongoDBBasicTest):
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
         # Because of inserted NULL values
         self.assertEqual(len(data), 3600)
+        data = list(data)
+        self._test_data_types(data)
 
         self.assertEqual(data[0]['t']['a'], ts) # first
         self.assertEqual(data[0]['t']['z'], ts) # last
@@ -992,15 +1072,19 @@ class BasicTest(MongoDBBasicTest):
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=ts)
         self.assertEqual(len(data), 600)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes10, start=ts)
         self.assertEqual(len(data), 60)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Hours, start=ts)
         self.assertEqual(len(data), 10)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Hours6, start=ts)
         self.assertEqual(len(data), 1)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Days, start=ts)
         self.assertEqual(len(data), 0)
@@ -1041,6 +1125,7 @@ class BasicTest(MongoDBBasicTest):
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=datetime.datetime.min)
         self.assertEqual(len(data), 17280)
+        self._test_data_types(data)
 
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 3, 12, 0, 0))
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 3, 12, 0, 5))
@@ -1192,7 +1277,8 @@ class BasicTest(MongoDBBasicTest):
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts0, end=ts)
         self.assertEqual(len(data), points)
-        self.assertEqual((ts - ts0).total_seconds(), points * interval)
+        self._test_data_types(data)
+        self.assertEqual(mongodb.total_seconds(ts - ts0), points * interval)
 
         def check_values(data, n):
             self.assertEqual(data[0]['v']['c'], n) # count
@@ -1211,6 +1297,8 @@ class BasicTest(MongoDBBasicTest):
                 break
 
             data = self.datastream.get_data(stream_id, granularity, start=ts0, end=ts)
+            data = list(data)
+            self._test_data_types(data)
             check_values(data, granularity.duration_in_seconds() / interval)
 
     def test_already_downsampled(self):
@@ -1235,6 +1323,8 @@ class BasicTest(MongoDBBasicTest):
             self.datastream.downsample_streams()
 
         data = self.datastream.get_data(stream_id, datastream.Granularity.Seconds10, start=ts0, end=ts)
+        data = list(data)
+        self._test_data_types(data)
 
         self.assertEqual(data[0]['v']['c'], 60) # count
         self.assertEqual(data[0]['v']['m'], 3.0) # mean
@@ -1265,99 +1355,129 @@ class BasicTest(MongoDBBasicTest):
         # SECONDS
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end=e)
         self.assertEqual(len(data), 61)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end=e)
         self.assertEqual(len(data), 60)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end_exclusive=e)
         self.assertEqual(len(data), 60)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end_exclusive=e)
         self.assertEqual(len(data), 59)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s)
         self.assertEqual(len(data), 1200)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s)
         self.assertEqual(len(data), 1199)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end=datetime.datetime.max)
         self.assertEqual(len(data), 1200)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end=datetime.datetime.max)
         self.assertEqual(len(data), 1199)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end_exclusive=datetime.datetime.max)
         self.assertEqual(len(data), 1200)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end_exclusive=datetime.datetime.max)
         self.assertEqual(len(data), 1199)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end=e)
         self.assertEqual(len(data), 61)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end=e)
         self.assertEqual(len(data), 61)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end_exclusive=e)
         self.assertEqual(len(data), 60)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end_exclusive=e)
         self.assertEqual(len(data), 60)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min)
         self.assertEqual(len(data), 1200)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min)
         self.assertEqual(len(data), 1200)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end=datetime.datetime.max)
         self.assertEqual(len(data), 1200)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end=datetime.datetime.max)
         self.assertEqual(len(data), 1200)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end_exclusive=datetime.datetime.max)
         self.assertEqual(len(data), 1200)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end_exclusive=datetime.datetime.max)
         self.assertEqual(len(data), 1200)
+        self._test_data_types(data)
 
         #10 SECONDS
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=s, end=e)
         self.assertEqual(len(data), 7)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start_exclusive=s, end=e)
         self.assertEqual(len(data), 6)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=s, end_exclusive=e)
         self.assertEqual(len(data), 6)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start_exclusive=s, end_exclusive=e)
         self.assertEqual(len(data), 5)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=datetime.datetime.min, end=datetime.datetime.max)
         self.assertEqual(len(data), 119)
+        self._test_data_types(data)
 
         # MINUTES
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=s, end=e)
         self.assertEqual(len(data), 2)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start_exclusive=s, end=e)
         self.assertEqual(len(data), 1)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=s, end_exclusive=e)
         self.assertEqual(len(data), 1)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start_exclusive=s, end_exclusive=e)
         self.assertEqual(len(data), 0)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=datetime.datetime.min, end=datetime.datetime.max)
         self.assertEqual(len(data), 19)
+        self._test_data_types(data)
 
         # 10 MINUTES
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes10, start=datetime.datetime.min)
         self.assertEqual(len(data), 1)
+        self._test_data_types(data)
 
         # HOURS
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Hours, start=datetime.datetime.min)
@@ -1394,99 +1514,129 @@ class BasicTest(MongoDBBasicTest):
         # SECONDS
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end=e)
         self.assertEqual(len(data), 3 * 61)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end=e)
         self.assertEqual(len(data), 3 * 60)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end_exclusive=e)
         self.assertEqual(len(data), 3 * 60)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end_exclusive=e)
         self.assertEqual(len(data), 3 * 59)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s)
         self.assertEqual(len(data), 3 * 1200)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s)
         self.assertEqual(len(data), 3 * 1199)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end=datetime.datetime.max)
         self.assertEqual(len(data), 3 * 1200)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end=datetime.datetime.max)
         self.assertEqual(len(data), 3 * 1199)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end_exclusive=datetime.datetime.max)
         self.assertEqual(len(data), 3 * 1200)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=s, end_exclusive=datetime.datetime.max)
         self.assertEqual(len(data), 3 * 1199)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end=e)
         self.assertEqual(len(data), 3 * 61)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end=e)
         self.assertEqual(len(data), 3 * 61)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end_exclusive=e)
         self.assertEqual(len(data), 3 * 60)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end_exclusive=e)
         self.assertEqual(len(data), 3 * 60)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min)
         self.assertEqual(len(data), 3 * 1200)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min)
         self.assertEqual(len(data), 3 * 1200)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end=datetime.datetime.max)
         self.assertEqual(len(data), 3 * 1200)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end=datetime.datetime.max)
         self.assertEqual(len(data), 3 * 1200)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min, end_exclusive=datetime.datetime.max)
         self.assertEqual(len(data), 3 * 1200)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start_exclusive=datetime.datetime.min, end_exclusive=datetime.datetime.max)
         self.assertEqual(len(data), 3 * 1200)
+        self._test_data_types(data)
 
         #10 SECONDS
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=s, end=e)
         self.assertEqual(len(data), 7)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start_exclusive=s, end=e)
         self.assertEqual(len(data), 6)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=s, end_exclusive=e)
         self.assertEqual(len(data), 6)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start_exclusive=s, end_exclusive=e)
         self.assertEqual(len(data), 5)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=datetime.datetime.min, end=datetime.datetime.max)
         self.assertEqual(len(data), 119)
+        self._test_data_types(data)
 
         # MINUTES
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=s, end=e)
         self.assertEqual(len(data), 2)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start_exclusive=s, end=e)
         self.assertEqual(len(data), 1)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=s, end_exclusive=e)
         self.assertEqual(len(data), 1)
+        self._test_data_types(data)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start_exclusive=s, end_exclusive=e)
         self.assertEqual(len(data), 0)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=datetime.datetime.min, end=datetime.datetime.max)
         self.assertEqual(len(data), 19)
+        self._test_data_types(data)
 
         # 10 MINUTES
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes10, start=datetime.datetime.min)
         self.assertEqual(len(data), 1)
+        self._test_data_types(data)
 
         # HOURS
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Hours, start=datetime.datetime.min)
