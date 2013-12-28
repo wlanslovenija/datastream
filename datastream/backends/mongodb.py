@@ -7,6 +7,7 @@ import inspect
 import numbers
 import os
 import struct
+import threading
 import time
 import uuid
 import warnings
@@ -33,6 +34,7 @@ ONE_SECOND_TIMEDELTA = datetime.timedelta(seconds=1)
 DECIMAL_PRECISION = 64
 
 MAINTENANCE_LOCK_DURATION = 120
+DOWNSAMPLE_SAFETY_MARGIN = 10
 
 
 def deserialize_numeric_value(value):
@@ -938,6 +940,20 @@ class ContributesToStreamDescriptor(mongoengine.EmbeddedDocument):
     args = mongoengine.DynamicField()
 
 
+class LastDatapoint(mongoengine.Document):
+    stream_id = mongoengine.IntField(db_field='s')
+    insertion_ts = mongoengine.DateTimeField(db_field='i')
+    datapoint_ts = mongoengine.DateTimeField(db_field='d')
+
+    meta = {
+        'db_alias': DATABASE_ALIAS,
+        'indexes': [
+            {'fields': ['stream_id', 'insertion_ts']},
+            {'fields': ['insertion_ts'], 'expireAfterSeconds': DOWNSAMPLE_SAFETY_MARGIN},
+        ]
+    }
+
+
 class Stream(mongoengine.Document):
     # Sequence field uses integer which is much smaller than ObjectId value
     # Because stream id is stored in each datapoint it is important that it is small
@@ -1031,11 +1047,18 @@ class Backend(object):
                 ('_id', pymongo.DESCENDING),
             ])
 
+        # TODO: For some reason the indexes don't get created unless calling ensure_indexes
+        Stream.ensure_indexes()
+        LastDatapoint.ensure_indexes()
+
         # Only for testing, don't use!
         self._test_callback = None
 
         # Used only to artificially advance time when testing, don't use!
         self._time_offset = ZERO_TIMEDELTA
+
+        # Used only for concurrency tests
+        self._test_concurrency = threading.local()
 
     def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity, derive_from, derive_op, derive_args):
         """
@@ -1463,14 +1486,23 @@ class Backend(object):
                     raise exceptions.InvalidTimestamp("Datapoint timestamp must be equal or larger (newer) than the latest one '%s': %s" % (stream.latest_datapoint, object_id.generation_time))
 
             # Update last datapoint metadata
+            timestamp_check_time = datetime.datetime.now(pytz.utc)
             mstream = Stream._get_collection().find_and_modify(
                 {'_id': stream.pk, 'latest_datapoint': stream.latest_datapoint},
-                {'$set': {'latest_datapoint': object_id.generation_time}}
+                {'$set': {'latest_datapoint': object_id.generation_time}},
+                fields={'_id': 1},
             )
             if not mstream:
                 stream.reload()
                 continue
             else:
+                stream.latest_datapoint = object_id.generation_time
+                ld = LastDatapoint(
+                    stream_id=stream.pk,
+                    insertion_ts=timestamp_check_time,
+                    datapoint_ts=object_id.generation_time
+                )
+                ld.save()
                 break
         else:
             raise exceptions.StreamAppendContended
@@ -1479,11 +1511,17 @@ class Backend(object):
             stream.earliest_datapoint = stream.latest_datapoint
             stream.save()
 
+        if getattr(self._test_concurrency, 'sleep', False):
+            time.sleep(DOWNSAMPLE_SAFETY_MARGIN // 2)
+
         # Append the datapoint into appropriate granularity
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
         collection = getattr(db.datapoints, stream.highest_granularity.name)
         datapoint = {'_id': object_id, 'm': stream.id, 'v': value}
         collection.insert(datapoint, w=1)
+
+        if (datetime.datetime.now(pytz.utc) - timestamp_check_time).total_seconds() > DOWNSAMPLE_SAFETY_MARGIN:
+            warnings.warn(exceptions.DownsampleConsistencyNotGuaranteed("Downsample safety margin of %d seconds exceeded in append." % DOWNSAMPLE_SAFETY_MARGIN))
 
         # Process contributions to other streams
         self._process_contributes_to(stream, object_id.generation_time, value, stream.highest_granularity)
@@ -1760,11 +1798,12 @@ class Backend(object):
         new_datapoints = []
 
         # Lock the stream for downsampling
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(pytz.utc)
         locked_until = now + datetime.timedelta(seconds=MAINTENANCE_LOCK_DURATION)
         locked_stream = Stream._get_collection().find_and_modify(
             {"_id": stream.pk, "_lock_mt": {"$lt": now}, "downsample_count": stream.downsample_count},
-            {"$set": {"_lock_mt": locked_until}, "$inc": {"downsample_count": 1}}
+            {"$set": {"_lock_mt": locked_until}, "$inc": {"downsample_count": 1}},
+            fields={'_id': 1},
         )
         if not locked_stream:
             # Skip downsampling of this stream as we have failed to acquire the lock
@@ -1772,7 +1811,14 @@ class Backend(object):
 
         try:
             # Last datapoint timestamp of one higher granularity
-            higher_last_ts = stream.latest_datapoint or self._min_timestamp
+            if stream.latest_datapoint:
+                now += self._time_offset
+                higher_last_ts = LastDatapoint.objects(
+                    stream_id=stream.pk,
+                    insertion_ts__gte=now - datetime.timedelta(seconds=DOWNSAMPLE_SAFETY_MARGIN),
+                ).order_by('datapoint_ts').scalar('datapoint_ts').first() or stream.latest_datapoint
+            else:
+                higher_last_ts = self._min_timestamp
 
             for granularity in api.Granularity.values[api.Granularity.values.index(stream.highest_granularity) + 1:]:
                 state = stream.downsample_state.get(granularity.name, None)
@@ -1909,7 +1955,7 @@ class Backend(object):
 
         def store_downsampled_datapoint(timestamp, locked_until):
             # Check if we need to lengthen the lock
-            now = datetime.datetime.utcnow()
+            now = datetime.datetime.now(pytz.utc)
             if locked_until < now:
                 # Lock has expired while we were processing; abort immediately
                 raise exceptions.LockExpiredMidMaintenance

@@ -1,4 +1,5 @@
 import collections
+import contextlib
 import datetime
 import decimal
 import random
@@ -35,9 +36,17 @@ class MongoDBBasicTest(unittest.TestCase):
     def tearDown(self):
         db = mongoengine.connection.get_db(mongodb.DATABASE_ALIAS)
         for collection in db.collection_names():
-            if collection == 'system.indexes':
+            if collection in ('system.indexes', 'system.profile'):
                 continue
             db.drop_collection(collection)
+
+
+@contextlib.contextmanager
+def time_offset(self, offset=datetime.timedelta(minutes=1)):
+    prev = self.datastream.backend._time_offset
+    self.datastream.backend._time_offset = datetime.timedelta(minutes=1)
+    yield
+    self.datastream.backend._time_offset = prev
 
 
 #@unittest.skip("performing stress test")
@@ -94,7 +103,8 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(as_tags['x'], 2)
 
         # Should not do anything
-        self.assertItemsEqual(self.datastream.downsample_streams(), [])
+        with time_offset(self):
+            self.assertItemsEqual(self.datastream.downsample_streams(), [])
 
         data = self.datastream.get_data(stream_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
         self.assertEqual(len(data), 0)
@@ -124,10 +134,11 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(len(data), 0)
 
         # Artificially increase backend time for a minute so that downsample will do something for minute granularity
-        self.datastream.backend._time_offset += datetime.timedelta(minutes=1)
+        self.datastream.backend._time_offset = datetime.timedelta(minutes=1)
         self.assertEqual(self.datastream.append(stream_id, 42)['datapoint']['v'], 42)
 
-        new_datapoints = self.datastream.downsample_streams(return_datapoints=True)
+        with time_offset(self):
+            new_datapoints = self.datastream.downsample_streams(return_datapoints=True)
 
         # At least Seconds10 and Minutes granularities should be available because we artificially increased backend time
         # See https://github.com/wlanslovenija/datastream/issues/12
@@ -506,7 +517,8 @@ class BasicTest(MongoDBBasicTest):
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
         self.assertEqual(len(data), 0)
 
-        x = self.datastream.downsample_streams(until=ts + datetime.timedelta(hours=10))
+        with time_offset(self):
+            x = self.datastream.downsample_streams(until=ts + datetime.timedelta(hours=10))
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
         self.assertEqual([x['v'] for x in data], [10.0, 10.0, 10.0])
@@ -663,7 +675,8 @@ class BasicTest(MongoDBBasicTest):
         ts = datetime.datetime(2000, 1, 1, 12, 2, 0, tzinfo=pytz.utc)
         self.datastream.append(stream_id, 2, ts)
 
-        self.datastream.downsample_streams()
+        with time_offset(self):
+            self.datastream.downsample_streams()
 
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
@@ -814,7 +827,8 @@ class BasicTest(MongoDBBasicTest):
         self.datastream.append(stream_id, 20, ts)
 
         ts = datetime.datetime(2000, 1, 1, 12, 13, 45, tzinfo=pytz.utc)
-        self.datastream.downsample_streams(until=ts)
+        with time_offset(self):
+            self.datastream.downsample_streams(until=ts)
 
         ts = datetime.datetime(2000, 1, 1, 12, 20, 0, tzinfo=pytz.utc)
         self.datastream.append(stream_id, 30, ts)
@@ -822,7 +836,8 @@ class BasicTest(MongoDBBasicTest):
         ts = datetime.datetime(2000, 1, 1, 12, 21, 0, tzinfo=pytz.utc)
         self.datastream.append(stream_id, 30, ts)
 
-        self.datastream.downsample_streams()
+        with time_offset(self):
+            self.datastream.downsample_streams()
 
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=ts)
@@ -839,7 +854,8 @@ class BasicTest(MongoDBBasicTest):
             else:
                 self.datastream.append(stream_id, decimal.Decimal(340282366920938463463374607431768211456), ts)
 
-        self.datastream.downsample_streams(until=ts + datetime.timedelta(hours=10))
+        with time_offset(self):
+            self.datastream.downsample_streams(until=ts + datetime.timedelta(hours=10))
 
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
@@ -938,7 +954,8 @@ class BasicTest(MongoDBBasicTest):
 
         self.datastream.append(stream_id, None, ts + datetime.timedelta(hours=10))
 
-        self.datastream.downsample_streams(until=ts + datetime.timedelta(hours=11))
+        with time_offset(self):
+            self.datastream.downsample_streams(until=ts + datetime.timedelta(hours=11))
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
         self.assertEqual(len(data), 6)
@@ -1019,7 +1036,8 @@ class BasicTest(MongoDBBasicTest):
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 1, 12, 0, 0))
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 3, 12, 0, 0))
 
-        self.datastream.downsample_streams(until=datetime.datetime(2000, 1, 3, 12, 0, 10))
+        with time_offset(self):
+            self.datastream.downsample_streams(until=datetime.datetime(2000, 1, 3, 12, 0, 10))
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=datetime.datetime.min)
         self.assertEqual(len(data), 17280)
@@ -1030,13 +1048,73 @@ class BasicTest(MongoDBBasicTest):
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 3, 12, 0, 10))
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 4, 12, 0, 0))
 
-        self.datastream.downsample_streams(until=datetime.datetime(2000, 1, 10, 12, 0, 0))
+        with time_offset(self):
+            self.datastream.downsample_streams(until=datetime.datetime(2000, 1, 10, 12, 0, 0))
 
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 5, 12, 0, 0))
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 9, 12, 0, 0))
 
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 10, 12, 0, 0))
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 10, 12, 0, 1))
+
+    def test_concurrent_append(self):
+        stream_id = self.datastream.ensure_stream({'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
+        thread_started = threading.Condition()
+
+        def worker_append(minute, sleep):
+            ts = datetime.datetime(2000, 1, 1, 0, minute, 0, tzinfo=pytz.utc)
+            self.datastream.backend._test_concurrency.sleep = sleep
+            try:
+                thread_started.acquire()
+                thread_started.notify()
+                thread_started.release()
+
+                self.datastream.append(stream_id, 1, ts)
+            finally:
+                self.datastream.backend._test_concurrency.sleep = False
+
+        # CONCURRENCY SCENARIO
+        # We simulate the following scenario:
+        #   - At time t0, thread A starts inserting a datapoint with timestamp T0
+        #   - Thread A modifies the latest_datapoint in stream metadata
+        #   - At time t1, thread B starts inserting a datapoint with timestamp T1
+        #     and immediately succeeds at time t2
+        #   - At time t3, stream downsampling is initiated
+        #   - At time t4, thread A succeeds inserting a new datapoint with timestamp T0
+        #
+        # It holds:
+        #   t0 < t1 < t2 < t3 < t4
+        #   T0 << T1
+        #
+        # We check that downsampling results are consistent.
+
+        # Create some datapoints so there is something to downsample
+        for i in xrange(5):
+            ts = datetime.datetime(2000, 1, 1, 0, 0, i, tzinfo=pytz.utc)
+            self.datastream.append(stream_id, 1, ts)
+        # Sleep so there will be some datapoints to downsample outside the margin
+        time.sleep(mongodb.DOWNSAMPLE_SAFETY_MARGIN + 5)
+        # First thread should sleep half of safety margin
+        t1 = threading.Thread(target=worker_append, args=(1, True))
+        # Wait for the first thread to start
+        thread_started.acquire()
+        t1.start()
+        thread_started.wait()
+        thread_started.release()
+        time.sleep(1)
+        # Second thread should not sleep
+        worker_append(5, False)
+        # Start downsampling before the first thread inserts
+        datapoints = self.datastream.downsample_streams(return_datapoints=True)
+        # Wait for the first thread to finish
+        t1.join()
+
+        self.assertEqual(len(datapoints), 7)
+
+        with time_offset(self):
+            datapoints = self.datastream.downsample_streams(return_datapoints=True)
+
+        self.assertEqual(len(datapoints), 28)
 
     def test_concurrent(self):
         for i in xrange(10):
@@ -1055,13 +1133,14 @@ class BasicTest(MongoDBBasicTest):
 
         threads = []
         results = collections.deque()
-        for i in xrange(5):
-            t = threading.Thread(target=worker, args=(results,))
-            threads.append(t)
-            t.start()
+        with time_offset(self):
+            for i in xrange(5):
+                t = threading.Thread(target=worker, args=(results,))
+                threads.append(t)
+                t.start()
 
-        for t in threads:
-            t.join()
+            for t in threads:
+                t.join()
 
         if results:
             all_datapoints = 0
@@ -1085,7 +1164,8 @@ class BasicTest(MongoDBBasicTest):
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            self.datastream.downsample_streams(until=ts)
+            with time_offset(self):
+                self.datastream.downsample_streams(until=ts)
 
             self.assertEqual(any([x.category == exceptions.InvalidValueWarning for x in w]), False)
 
@@ -1104,9 +1184,11 @@ class BasicTest(MongoDBBasicTest):
             ts += datetime.timedelta(seconds=interval)
 
             if (i + 1) % downsample_every == 0:
-                self.datastream.downsample_streams(until=ts)
+                with time_offset(self):
+                    self.datastream.downsample_streams(until=ts)
 
-        self.datastream.downsample_streams(until=ts)
+        with time_offset(self):
+            self.datastream.downsample_streams(until=ts)
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts0, end=ts)
         self.assertEqual(len(data), points)
@@ -1149,7 +1231,8 @@ class BasicTest(MongoDBBasicTest):
             self.datastream.append(stream_id, 3, ts)
             ts += datetime.timedelta(seconds=1)
 
-        self.datastream.downsample_streams()
+        with time_offset(self):
+            self.datastream.downsample_streams()
 
         data = self.datastream.get_data(stream_id, datastream.Granularity.Seconds10, start=ts0, end=ts)
 
@@ -1173,7 +1256,8 @@ class BasicTest(MongoDBBasicTest):
             self.datastream.append(stream_id, i, ts)
             ts += datetime.timedelta(seconds=1)
 
-        self.datastream.downsample_streams(until=ts)
+        with time_offset(self):
+            self.datastream.downsample_streams(until=ts)
 
         s = datetime.datetime(2000, 1, 1, 12, 0, 0)
         e = datetime.datetime(2000, 1, 1, 12, 1, 0)
@@ -1301,7 +1385,8 @@ class BasicTest(MongoDBBasicTest):
                 self.datastream.append(stream_id, j * i, ts)
             ts += datetime.timedelta(seconds=1)
 
-        self.datastream.downsample_streams(until=ts)
+        with time_offset(self):
+            self.datastream.downsample_streams(until=ts)
 
         s = datetime.datetime(2000, 1, 1, 12, 0, 0)
         e = datetime.datetime(2000, 1, 1, 12, 1, 0)
@@ -1435,7 +1520,8 @@ class StressTest(MongoDBBasicTest):
 
             if i % 3600 == 0:
                 t1 = time.time()
-                self.datastream.downsample_streams(until=ts)
+                with time_offset(self):
+                    self.datastream.downsample_streams(until=ts)
                 t2 = time.time()
                 print "%08d insert: %d:%02d    downsample: %d:%02d" % (
                     i,

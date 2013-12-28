@@ -147,3 +147,13 @@ class InternalInconsistencyWarning(DatastreamWarning):
     """
 
     pass
+
+
+class DownsampleConsistencyNotGuaranteed(DatastreamWarning):
+    """
+    Warning used when consistency of downsampled values with original datapoints
+    is no longer guaranteed due to some condition. Reseting downsample state and
+    redoing downsampling could be necessary.
+    """
+
+    pass
