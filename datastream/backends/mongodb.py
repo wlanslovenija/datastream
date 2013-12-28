@@ -1,6 +1,5 @@
 import calendar
 import collections
-import copy
 import datetime
 import decimal
 import inspect
@@ -11,12 +10,11 @@ import threading
 import time
 import uuid
 import warnings
-import math
 
 import pytz
 
 import pymongo
-from bson import objectid, son, timestamp as bson_timestamp
+from bson import objectid
 
 import mongoengine
 
