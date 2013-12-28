@@ -28,7 +28,7 @@ if __name__ == '__main__':
         include_package_data=True,
         zip_safe=False,
         install_requires=[
-            'mongoengine>=0.6.20,<=0.8.1',
+            'mongoengine>=0.8.1,<0.8.2',
             'pymongo>=2.2.1',
             'pytz>=2012h',
         ],
