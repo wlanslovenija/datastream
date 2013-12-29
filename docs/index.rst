@@ -1,7 +1,7 @@
-datastream documentation
-===============================
+Datastream API documentation
+============================
 
-Tunneldigger is one of the projects of `wlan slovenija`_ open wireless network.
+Datastream API is one of the projects of `wlan slovenija`_ open wireless network.
 It is a Python API which abstracts the data-base level on time-series data. It provides easy way to insert
 time-series datapoints and automatically downsample them into multiple levels of granularity for efficient querying
 time-series data at various time scales.
@@ -10,7 +10,7 @@ time-series data at various time scales.
 
 Contents
 --------
- 
+
 .. toctree::
    :maxdepth: 2
 
