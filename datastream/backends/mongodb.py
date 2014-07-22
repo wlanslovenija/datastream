@@ -147,6 +147,7 @@ class DownsamplersBase(object):
 
         name = None
         key = None
+        supports_types = ()
 
         def initialize(self):
             pass
@@ -192,6 +193,7 @@ class ValueDownsamplers(DownsamplersBase):
         """
 
         name = 'count'
+        supports_types = ('numeric', 'graph')
 
         def initialize(self):
             self.count = 0
@@ -214,6 +216,7 @@ class ValueDownsamplers(DownsamplersBase):
         """
 
         name = 'sum'
+        supports_types = ('numeric',)
 
         def initialize(self):
             self.sum = None
@@ -245,6 +248,7 @@ class ValueDownsamplers(DownsamplersBase):
         """
 
         name = 'sum_squares'
+        supports_types = ('numeric',)
 
         def initialize(self):
             self.sum = None
@@ -280,6 +284,7 @@ class ValueDownsamplers(DownsamplersBase):
         """
 
         name = 'min'
+        supports_types = ('numeric',)
 
         def initialize(self):
             self.min = None
@@ -312,6 +317,7 @@ class ValueDownsamplers(DownsamplersBase):
         """
 
         name = 'max'
+        supports_types = ('numeric',)
 
         def initialize(self):
             self.max = None
@@ -345,6 +351,7 @@ class ValueDownsamplers(DownsamplersBase):
 
         name = 'mean'
         dependencies = ('sum', 'count')
+        supports_types = ('numeric',)
 
         def postprocess(self, values):
             assert 'm' not in values
@@ -367,6 +374,7 @@ class ValueDownsamplers(DownsamplersBase):
 
         name = 'std_dev'
         dependencies = ('sum', 'count', 'sum_squares')
+        supports_types = ('numeric',)
 
         def postprocess(self, values):
             assert self.key not in values
@@ -495,6 +503,7 @@ class DerivationOperators(object):
         """
 
         name = None
+        supports_types = ()
 
         def __init__(self, backend, dst_stream, **parameters):
             """
@@ -551,6 +560,7 @@ class DerivationOperators(object):
         """
 
         name = 'sum'
+        supports_types = ('numeric',)
 
         @classmethod
         def get_parameters(cls, src_streams, dst_stream, **arguments):
@@ -640,6 +650,7 @@ class DerivationOperators(object):
         """
 
         name = 'derivative'
+        supports_types = ('numeric',)
 
         @classmethod
         def get_parameters(cls, src_streams, dst_stream, **arguments):
@@ -708,6 +719,7 @@ class DerivationOperators(object):
         """
 
         name = 'counter_reset'
+        supports_types = ('numeric',)
 
         @classmethod
         def get_parameters(cls, src_streams, dst_stream, **arguments):
@@ -763,6 +775,7 @@ class DerivationOperators(object):
         """
 
         name = 'counter_derivative'
+        supports_types = ('numeric',)
 
         def __init__(self, backend, dst_stream, max_value=None, **parameters):
             """
@@ -1001,6 +1014,7 @@ class Stream(mongoengine.Document):
     pending_backprocess = mongoengine.BooleanField()
     earliest_datapoint = mongoengine.DateTimeField()
     latest_datapoint = mongoengine.DateTimeField()
+    value_type = mongoengine.StringField()
     tags = mongoengine.DictField()
 
     # Maintenance operations lock
@@ -1089,7 +1103,7 @@ class Backend(object):
         # Used only for concurrency tests
         self._test_concurrency = threading.local()
 
-    def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity, derive_from, derive_op, derive_args):
+    def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity, derive_from, derive_op, derive_args, value_type):
         """
         Ensures that a specified stream exists.
 
@@ -1102,6 +1116,7 @@ class Backend(object):
         :param derive_from: Create a derivate stream
         :param derive_op: Derivation operation
         :param derive_args: Derivation operation arguments
+        :param value_type: Value type
         :return: A stream identifier
         """
 
@@ -1114,6 +1129,11 @@ class Backend(object):
             if combined_tags != stream.tags:
                 stream.tags = combined_tags
                 stream.save()
+
+            if value_type != stream.value_type:
+                raise exceptions.InconsistentStreamConfiguration(
+                    "You cannot change a stream's value type"
+                )
 
             # If a stream already exists and the derive inputs and/or operator have changed,
             # we raise an exception
@@ -1156,11 +1176,21 @@ class Backend(object):
                     "Unsupported value downsampler(s): %s" % list(value_downsamplers - self.value_downsamplers),
                 )
 
+            for downsampler in ValueDownsamplers.values:
+                if downsampler.name not in value_downsamplers:
+                    continue
+
+                if value_type not in downsampler.supports_types:
+                    raise exceptions.UnsupportedDownsampler(
+                        "Downsampler '%s' does not support type '%s'" % (downsampler.name, value_type)
+                    )
+
             # This should already be checked at the API level
             assert highest_granularity in api.Granularity.values
 
             stream.value_downsamplers = list(value_downsamplers)
             stream.highest_granularity = highest_granularity
+            stream.value_type = value_type
             stream.tags = query_tags.copy()
             stream.tags.update(tags)
 
@@ -1207,6 +1237,13 @@ class Backend(object):
 
                 # Validate and convert operator parameters
                 derive_operator = DerivationOperators.get(derive_op)
+                if value_type not in derive_operator.supports_types:
+                    raise exceptions.UnsupportedDeriveOperator(
+                        "Derivation operator '%s' does not support type '%s'" % (
+                            derive_operator.name,
+                            value_type,
+                        )
+                    )
                 derive_args = derive_operator.get_parameters(derive_stream_dscs, stream, **derive_args)
 
                 derived = DerivedStreamDescriptor()
@@ -1307,7 +1344,8 @@ class Backend(object):
             'downsampled_until': dict([
                 (g.name, getattr(stream.downsample_state.get(g.name, None), 'timestamp', None))
                 for g in api.Granularity.values[api.Granularity.values.index(stream.highest_granularity) + 1:]
-            ])
+            ]),
+            'value_type': stream.value_type,
         })
 
         if stream.derived_from:

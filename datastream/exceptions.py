@@ -69,6 +69,14 @@ class UnsupportedDeriveOperator(DatastreamException, ValueError):
     pass
 
 
+class UnsupportedValueType(DatastreamException, TypeError):
+    """
+    Raised when value type requested is unsupported.
+    """
+
+    pass
+
+
 class ReservedTagNameError(DatastreamException, ValueError):
     """
     Raised when updating tags with a reserved tag name.

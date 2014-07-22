@@ -1142,6 +1142,26 @@ class BasicTest(MongoDBBasicTest):
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 10, 12, 0, 0))
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 10, 12, 0, 1))
 
+    def test_stream_types(self):
+        with self.assertRaises(exceptions.UnsupportedValueType):
+            self.datastream.ensure_stream({'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds, value_type='wtfvaluewtf')
+
+        stream_id = self.datastream.ensure_stream({'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
+        with self.assertRaises(exceptions.InconsistentStreamConfiguration):
+            self.datastream.ensure_stream({'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds, value_type='graph')
+        with self.assertRaises(exceptions.UnsupportedDownsampler):
+            self.datastream.ensure_stream({'name': 'bar'}, {}, self.value_downsamplers, datastream.Granularity.Seconds, value_type='graph')
+        with self.assertRaises(exceptions.UnsupportedDeriveOperator):
+            stream_id = self.datastream.ensure_stream(
+                {'name': 'derived'},
+                {},
+                ['count'],
+                datastream.Granularity.Seconds,
+                derive_from=[stream_id, stream_id],
+                derive_op='sum',
+                value_type='graph',
+            )
+
     def test_concurrent_append(self):
         stream_id = self.datastream.ensure_stream({'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
 
