@@ -1214,6 +1214,10 @@ class Backend(object):
                     try:
                         src_stream = Stream.objects.get(external_id=uuid.UUID(stream_dsc['stream']))
 
+                        # One can't derive from streams with incompatible types
+                        if src_stream.value_type != stream.value_type:
+                            raise exceptions.IncompatibleTypes
+
                         # One can't specify a granularity higher than the stream's highest one
                         if stream_dsc.get('granularity', src_stream.highest_granularity) > src_stream.highest_granularity:
                             raise exceptions.IncompatibleGranularities
@@ -1525,25 +1529,73 @@ class Backend(object):
 
         self._supported_timestamp_range(timestamp)
 
-        # If the value is too big to store into MongoDB as an integer and is not already a float,
-        # convert it to string and write a string into the database
-        if isinstance(value, numbers.Number):
-            value = serialize_numeric_value(value)
-        elif isinstance(value, dict):
-            # TODO: This should be changed when we add support for types
-            # Assume that we are inserting a downsampled datapoint
-            valid_keys = set()
-            for ds_name in stream.value_downsamplers:
-                key = api.VALUE_DOWNSAMPLERS[ds_name]
-                valid_keys.add(key)
-                if key not in value:
-                    raise ValueError("Missing datapoint value for downsampler '%s'!" % ds_name)
-                else:
-                    value[key] = serialize_numeric_value(value[key])
+        if stream.value_type == 'numeric':
+            # If the value is too big to store into MongoDB as an integer and is not already a float,
+            # convert it to string and write a string into the database
+            if isinstance(value, numbers.Number):
+                value = serialize_numeric_value(value)
+            elif isinstance(value, dict):
+                # Assume that we are inserting a downsampled datapoint
+                valid_keys = set()
+                for ds_name in stream.value_downsamplers:
+                    key = api.VALUE_DOWNSAMPLERS[ds_name]
+                    valid_keys.add(key)
+                    if key not in value:
+                        raise ValueError("Missing datapoint value for downsampler '%s'!" % ds_name)
+                    else:
+                        value[key] = serialize_numeric_value(value[key])
 
-            for key in value:
-                if key not in valid_keys:
-                    raise ValueError("Unknown downsampled datapoint key '%s'!" % key)
+                for key in value:
+                    if key not in valid_keys:
+                        raise ValueError("Unknown downsampled datapoint key '%s'!" % key)
+            elif value is None:
+                pass
+            else:
+                raise TypeError("Streams of type 'numeric' may only accept numbers or downsampled datapoints!")
+        elif stream.value_type == 'graph':
+            if isinstance(value, dict):
+                try:
+                    vertices = value['v']
+                except KeyError:
+                    raise ValueError("Graph must contain a list of vertices under key 'v'!")
+
+                try:
+                    edges = value['e']
+                except KeyError:
+                    raise ValueError("Graph must contain a list of edges under key 'e'!")
+
+                # Validate that node identifiers are not duplicated
+                vertices_set = set()
+                for vertex in vertices:
+                    try:
+                        vid = vertex['i']
+                        if vid in vertices_set:
+                            raise ValueError("Duplicate vertex identifier '%s'!" % vid)
+                        vertices_set.add(vid)
+                    except KeyError:
+                        raise ValueError("Graph vertices must contain a unique id under key 'i'!")
+
+                # Validates edges
+                for edge in edges:
+                    try:
+                        vertex_from = edge['f']
+                        if vertex_from not in vertices_set:
+                            raise ValueError("Invalid source vertex identifier '%s'!" % vertex_from)
+                    except KeyError:
+                        raise ValueError("Graph edges must contain source vertex id under key 'f'!")
+
+                    try:
+                        vertex_to = edge['t']
+                        if vertex_to not in vertices_set:
+                            raise ValueError("Invalid destination vertex identifier '%s'!" % vertex_to)
+                    except KeyError:
+                        raise ValueError("Graph edges must contain destination vertex id under key 't'!")
+            elif value is None:
+                pass
+            else:
+                raise TypeError("Streams of type 'graph' may only accept dictionary datapoints!")
+        else:
+            raise TypeError("Unsupported stream value type: %s" % stream.value_type)
 
         object_id = self._generate_object_id(timestamp)
 

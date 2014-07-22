@@ -99,6 +99,14 @@ class IncompatibleGranularities(DatastreamException, ValueError):
     pass
 
 
+class IncompatibleTypes(DatastreamException, TypeError):
+    """
+    Raised when derived stream's value type is incompatible with source stream's value type.
+    """
+
+    pass
+
+
 class AppendToDerivedStreamNotAllowed(DatastreamException, ValueError):
     """
     Raised when attempting to append to a derived stream.

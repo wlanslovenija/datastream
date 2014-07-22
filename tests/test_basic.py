@@ -675,36 +675,6 @@ class BasicTest(MongoDBBasicTest):
         self.datastream.delete_streams({'name': 'data'})
         self.datastream.delete_streams({'name': 'up'})
 
-    def test_derived_stream_warnings(self):
-        streamA_id = self.datastream.ensure_stream({'name': 'sA'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
-        streamB_id = self.datastream.ensure_stream({'name': 'sB'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
-        stream_id = self.datastream.ensure_stream(
-            {'name': 'dA'},
-            {},
-            self.value_downsamplers,
-            datastream.Granularity.Seconds,
-            derive_from=[streamA_id, streamB_id],
-            derive_op='sum',
-        )
-        stream_id = self.datastream.ensure_stream(
-            {'name': 'dB'},
-            {},
-            self.value_downsamplers,
-            datastream.Granularity.Seconds,
-            derive_from=[streamA_id],
-            derive_op='derivative',
-        )
-
-        # Test warnings for sum/derivative operators
-        ts = datetime.datetime(2000, 1, 1, 12, 0, 1, tzinfo=pytz.utc)
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            self.datastream.append(streamA_id, "foo", ts)
-            self.datastream.append(streamB_id, "bar", ts)
-
-            self.assertEqual(len(w), 3)
-            self.assertEqual(all([x.category == exceptions.InvalidValueWarning for x in w]), True)
-
     def test_null_values(self):
         stream_id = self.datastream.ensure_stream({'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
 
@@ -1146,9 +1116,9 @@ class BasicTest(MongoDBBasicTest):
         with self.assertRaises(exceptions.UnsupportedValueType):
             self.datastream.ensure_stream({'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds, value_type='wtfvaluewtf')
 
-        stream_id = self.datastream.ensure_stream({'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
+        stream_id = self.datastream.ensure_stream({'name': 'foo'}, {}, ['count'], datastream.Granularity.Seconds, value_type='graph')
         with self.assertRaises(exceptions.InconsistentStreamConfiguration):
-            self.datastream.ensure_stream({'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds, value_type='graph')
+            self.datastream.ensure_stream({'name': 'foo'}, {}, ['count'], datastream.Granularity.Seconds)
         with self.assertRaises(exceptions.UnsupportedDownsampler):
             self.datastream.ensure_stream({'name': 'bar'}, {}, self.value_downsamplers, datastream.Granularity.Seconds, value_type='graph')
         with self.assertRaises(exceptions.UnsupportedDeriveOperator):
@@ -1161,6 +1131,99 @@ class BasicTest(MongoDBBasicTest):
                 derive_op='sum',
                 value_type='graph',
             )
+
+        stream_id = self.datastream.ensure_stream({'name': 'goo'}, {}, ['count'], datastream.Granularity.Seconds, value_type='graph')
+        with self.assertRaises(TypeError):
+            self.datastream.append(stream_id, 42, datetime.datetime(2000, 1, 1, 0, 0, 0))
+        with self.assertRaises(ValueError):
+            self.datastream.append(stream_id, {}, datetime.datetime(2000, 1, 1, 0, 0, 0))
+
+        # Test invalid graph
+        with self.assertRaises(ValueError):
+            self.datastream.append(
+                stream_id,
+                {
+                    'v': [{'foo': 'bar'}],
+                },
+                datetime.datetime(2000, 1, 1, 0, 0, 0)
+            )
+
+        with self.assertRaises(ValueError):
+            self.datastream.append(
+                stream_id,
+                {
+                    'v': [{'foo': 'bar'}],
+                    'e': []
+                },
+                datetime.datetime(2000, 1, 1, 0, 0, 0)
+            )
+
+        with self.assertRaises(ValueError):
+            self.datastream.append(
+                stream_id,
+                {
+                    'v': [
+                        {'i': 'bar'},
+                        {'i': 'bar'},
+                    ],
+                    'e': []
+                },
+                datetime.datetime(2000, 1, 1, 0, 0, 0)
+            )
+
+        with self.assertRaises(ValueError):
+            self.datastream.append(
+                stream_id,
+                {
+                    'v': [
+                        {'i': 'foo'},
+                        {'i': 'bar'},
+                    ],
+                    'e': [{}]
+                },
+                datetime.datetime(2000, 1, 1, 0, 0, 0)
+            )
+
+        with self.assertRaises(ValueError):
+            self.datastream.append(
+                stream_id,
+                {
+                    'v': [
+                        {'i': 'foo'},
+                        {'i': 'bar'},
+                    ],
+                    'e': [{'f': 'foo'}]
+                },
+                datetime.datetime(2000, 1, 1, 0, 0, 0)
+            )
+
+        with self.assertRaises(ValueError):
+            self.datastream.append(
+                stream_id,
+                {
+                    'v': [
+                        {'i': 'foo'},
+                        {'i': 'bar'},
+                    ],
+                    'e': [{'f': 'foo', 't': 'wtf'}]
+                },
+                datetime.datetime(2000, 1, 1, 0, 0, 0)
+            )
+
+        # Test graph insertion
+        self.datastream.append(
+            stream_id,
+            {
+                'v': [
+                    {'i': 'foo'},
+                    {'i': 'bar'},
+                ],
+                'e': [
+                    {'f': 'foo', 't': 'bar'},
+                ]
+            },
+            datetime.datetime(2000, 1, 1, 0, 0, 0)
+        )
 
     def test_concurrent_append(self):
         stream_id = self.datastream.ensure_stream({'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
