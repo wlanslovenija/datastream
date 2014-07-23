@@ -1107,8 +1107,8 @@ class Backend(object):
         """
         Ensures that a specified stream exists.
 
-        :param query_tags: Tags which uniquely identify a stream
-        :param tags: Tags that should be used (together with `query_tags`) to create a
+        :param query_tags: A dictionary of tags which uniquely identify a stream
+        :param tags: A dictionary of tags that should be used (together with `query_tags`) to create a
                      stream when it doesn't yet exist
         :param value_downsamplers: A set of names of value downsampler functions for this stream
         :param highest_granularity: Predicted highest granularity of the data the stream
@@ -1116,7 +1116,7 @@ class Backend(object):
         :param derive_from: Create a derivate stream
         :param derive_op: Derivation operation
         :param derive_args: Derivation operation arguments
-        :param value_type: Value type
+        :param value_type: Optional value type (defaults to `numeric`)
         :return: A stream identifier
         """
 

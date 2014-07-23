@@ -21,6 +21,32 @@ streams by using those tags. Some tags are reserved to not conflict with stream 
 higher-level packages like django-datastream_. Although tags can be complex values, simple values like strings or
 simple dicts are preferred.
 
+Types
+-----
+
+Datastream API supports various types for values stored as datapoints. Types influence how downsampling is done.
+Currently supported types are:
+
+* ``numeric`` – each datapoint value is a number
+* ``graph`` – each datapoint value is a graph
+
+Graph format is::
+
+    {
+        "v": [
+            {"i": "foo"},
+            {"i": "bar"}
+        ],
+        "e": [
+            {"f": "foo", "t": "bar"}
+        ]
+    }
+
+It contains a list of vertices (``v``) where each vertex element contains its ID (``i``). IDs can be of arbitrary type.
+Vertices can contain additional fields which are ignored, but might be used by downsamplers. List of edges (``e``)
+contains edges from vertex with ID equal to ``f``, to vertex with ID equal to ``t``. Additional fields are ignored,
+but might be used by downsamplers as well.
+
 Downsampling
 ------------
 

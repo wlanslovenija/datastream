@@ -277,7 +277,7 @@ class Datastream(object):
         :param derive_from: Create a derivate stream
         :param derive_op: Derivation operation
         :param derive_args: Derivation operation arguments
-        :param value_type: Optional value type (defaults to numeric)
+        :param value_type: Optional value type (defaults to `numeric`)
         :return: A stream identifier
         """
 
