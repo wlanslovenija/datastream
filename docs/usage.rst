@@ -42,8 +42,8 @@ Graph format is::
         ]
     }
 
-It contains a list of vertices (``v``) where each vertex element contains its ID (``i``). IDs can be of arbitrary type.
-Vertices can contain additional fields which are ignored, but might be used by downsamplers. List of edges (``e``)
+It contains a list of vertices ``v`` where each vertex element contains its ID ``i``. IDs can be of arbitrary type.
+Vertices can contain additional fields which are ignored, but might be used by downsamplers. List of edges ``e``
 contains edges from vertex with ID equal to ``f``, to vertex with ID equal to ``t``. Additional fields are ignored,
 but might be used by downsamplers as well.
 
