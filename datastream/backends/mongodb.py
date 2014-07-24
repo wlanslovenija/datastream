@@ -1845,7 +1845,7 @@ class Backend(object):
     def delete_streams(self, query_tags=None):
         """
         Deletes datapoints for all streams matching the specified
-        query tags. If no query tags are specified, all downstream-related
+        query tags. If no query tags are specified, all datastream-related
         data is deleted from the backend.
 
         :param query_tags: Tags that should be matched to streams
