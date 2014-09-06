@@ -379,7 +379,7 @@ class Datastream(object):
 
         return self.backend.append(stream_id, value, timestamp, check_timestamp)
 
-    def get_data(self, stream_id, granularity, start=None, end=None, start_exclusive=None, end_exclusive=None, reverse=False, value_downsamplers=None, time_downsamplers=None):
+    def get_data(self, stream_id, granularity, start=None, end=None, start_exclusive=None, end_exclusive=None, reverse=False, value_downsamplers=None, time_downsamplers=None, limit=None):
         """
         Retrieves data from a certain time range and of a certain granularity.
 
@@ -392,6 +392,7 @@ class Datastream(object):
         :param reverse: Should datapoints be returned in oldest to newest order (false), or in reverse (true)
         :param value_downsamplers: The list of downsamplers to limit datapoint values to (optional)
         :param time_downsamplers: The list of downsamplers to limit timestamp values to (optional)
+        :param limit: Limit the number of returned datapoints (optional)
         :return: A `Datapoints` iterator over datapoints
         """
 
@@ -428,7 +429,13 @@ class Datastream(object):
             if len(unsupported_downsamplers) > 0:
                 raise exceptions.UnsupportedDownsampler("Unsupported time downsampler(s): %s" % unsupported_downsamplers)
 
-        return self.backend.get_data(stream_id, granularity, start, end, start_exclusive, end_exclusive, reverse, value_downsamplers, time_downsamplers)
+        if limit is not None:
+            try:
+                limit = int(limit)
+            except ValueError:
+                raise ValueError("Limit value must be an integer!")
+
+        return self.backend.get_data(stream_id, granularity, start, end, start_exclusive, end_exclusive, reverse, value_downsamplers, time_downsamplers, limit)
 
     def downsample_streams(self, query_tags=None, until=None, return_datapoints=False):
         """
