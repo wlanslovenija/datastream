@@ -277,7 +277,7 @@ class Datastream(object):
         :param derive_from: Create a derivate stream
         :param derive_op: Derivation operation
         :param derive_args: Derivation operation arguments
-        :param value_type: Optional value type (defaults to numeric)
+        :param value_type: Optional value type (defaults to `numeric`)
         :return: A stream identifier
         """
 
@@ -470,7 +470,7 @@ class Datastream(object):
     def delete_streams(self, query_tags=None):
         """
         Deletes datapoints for all streams matching the specified
-        query tags. If no query tags are specified, all downstream-related
+        query tags. If no query tags are specified, all datastream-related
         data is deleted from the backend.
 
         :param query_tags: Tags that should be matched to streams
