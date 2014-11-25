@@ -1376,6 +1376,25 @@ class BasicTest(MongoDBBasicTest):
             self._test_data_types(data)
             check_values(data, granularity.duration_in_seconds() / interval)
 
+        # Test a stream with empty value downsamplers
+        stream_id = self.datastream.ensure_stream({'name': 'up'}, {}, [], datastream.Granularity.Seconds)
+        ts0 = datetime.datetime(2000, 1, 1, 0, 0, 0, tzinfo=pytz.utc)
+        ts = ts0
+
+        for i in xrange(100):
+            self.datastream.append(stream_id, 0.05, ts)
+            ts += datetime.timedelta(seconds=1)
+
+        with time_offset(self):
+            self.datastream.downsample_streams(until=ts)
+
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts0, end=ts)
+        self.assertEqual(len(data), 100)
+        # Check that all lower granularities are empty
+        for granularity in self.datastream.Granularity.values[1:]:
+            data = self.datastream.get_data(stream_id, granularity, start=ts0, end=ts)
+            self.assertEqual(len(data), 0)
+
     def test_already_downsampled(self):
         stream_id = self.datastream.ensure_stream({'name': 'test'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
 

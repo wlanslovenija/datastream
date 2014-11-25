@@ -1164,9 +1164,14 @@ class Backend(object):
             stream = Stream()
             stream.external_id = uuid.uuid4()
 
+            value_downsamplers = set(value_downsamplers)
+            # Ensure that the count downsampler is always included when downsampling is
+            # requested; otherwise the mean time downsampler will fail.
+            if value_downsamplers:
+                value_downsamplers.add('count')
+
             # Some downsampling functions don't need to be stored in the database but
             # can be computed on the fly from other downsampled values
-            value_downsamplers = set(value_downsamplers)
             for downsampler in ValueDownsamplers.values:
                 if downsampler.name in value_downsamplers and hasattr(downsampler, 'dependencies'):
                     value_downsamplers.update(downsampler.dependencies)
@@ -1901,7 +1906,7 @@ class Backend(object):
 
         new_datapoints = []
 
-        for stream in self._get_stream_queryset(query_tags):
+        for stream in self._get_stream_queryset(query_tags).filter(value_downsamplers__not__size=0):
             result = self._downsample_check(stream, until, return_datapoints)
             if return_datapoints:
                 new_datapoints += result
