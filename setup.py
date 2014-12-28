@@ -28,12 +28,12 @@ if __name__ == '__main__':
         include_package_data=True,
         zip_safe=False,
         install_requires=[
-            'mongoengine>=0.8.1,<0.8.2',
+            'mongoengine>=0.8.1',
             'pymongo>=2.2.1',
             'pytz>=2012h',
         ],
         tests_require=[
-            'mongoengine>=0.8.1,<0.8.2',
+            'mongoengine>=0.8.1',
             'pymongo>=2.2.1',
             'pytz>=2012h',
             'unittest2',

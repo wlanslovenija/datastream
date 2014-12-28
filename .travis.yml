@@ -1,18 +1,17 @@
 language: python
 python:
- - 2.6
  - 2.7
 env:
  - PYMONGO_VERSION="==2.2.1" MONGOENGINE_VERSION="==0.8.1"
- - PYMONGO_VERSION="==2.2.1" MONGOENGINE_VERSION=">=0.8.1,<0.8.2"
+ - PYMONGO_VERSION="==2.2.1" MONGOENGINE_VERSION=">=0.8.1"
  - PYMONGO_VERSION=">=2.2.1" MONGOENGINE_VERSION="==0.8.1"
- - PYMONGO_VERSION=">=2.2.1" MONGOENGINE_VERSION=">=0.8.1,<0.8.2"
+ - PYMONGO_VERSION=">=2.2.1" MONGOENGINE_VERSION=">=0.8.1"
 services: mongodb
 install:
  - pip install "pymongo$PYMONGO_VERSION"
  - pip install "mongoengine$MONGOENGINE_VERSION"
- - pip install pep8 --use-mirrors
- - pip install pylint --use-mirrors
+ - pip install pep8
+ - pip install pylint
  - python setup.py install
 before_script:
  - pep8 datastream tests docs
