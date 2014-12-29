@@ -247,6 +247,7 @@ class ResultsBase(object):
         # Very internal. Just for debugging and testing.
         raise NotImplementedError
 
+
 class Streams(ResultsBase):
     pass
 

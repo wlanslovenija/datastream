@@ -968,6 +968,7 @@ class Datapoints(api.Datapoints):
     def _get_backend_cursor(self):
         return self.cursor
 
+
 class DownsampleState(mongoengine.EmbeddedDocument):
     timestamp = mongoengine.DateTimeField()
 
