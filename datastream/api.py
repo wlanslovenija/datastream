@@ -273,6 +273,10 @@ class Datastream(object):
 
         self.backend = backend
 
+    def _switch_database(self, database_name):
+        # Very internal. Just for debugging and testing.
+        self.backend._switch_database(database_name)
+
     def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity, derive_from=None, derive_op=None, derive_args=None, value_type=None):
         """
         Ensures that a specified stream exists.

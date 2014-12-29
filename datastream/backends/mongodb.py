@@ -1060,9 +1060,9 @@ class Backend(object):
         """
 
         connection_settings.setdefault('tz_aware', True)
+        self.connection_settings = connection_settings
 
-        # Setup the database connection to MongoDB
-        mongoengine.connect(database_name, DATABASE_ALIAS, **connection_settings)
+        self._switch_database(database_name)
 
         assert \
             set(
@@ -1111,6 +1111,27 @@ class Backend(object):
 
         # Used only for concurrency tests
         self._test_concurrency = threading.local()
+
+    def _switch_database(self, database_name):
+        # Very internal. Just for debugging and testing.
+
+        # There can currently be only one connection to the database at a given moment, because
+        # stupid Mongoengine links all documents to the database alias. Even more, if a connection
+        # already exists with the same alias, then mongoengine.connect just returns the old connection,
+        # even if it is connected to a different database than requested! So to make sure, we first
+        # disconnect here, so that we get connected to the right database.
+        mongoengine.connection.disconnect(DATABASE_ALIAS)
+
+        # Settings are kept stored with old database name. Delete everything.
+        if DATABASE_ALIAS in mongoengine.connection._connection_settings:
+            del mongoengine.connection._connection_settings[DATABASE_ALIAS]
+
+        # And documents store collections with a link to old database. Clear that.
+        LastDatapoint._collection = None
+        Stream._collection = None
+
+        # Setup the database connection to MongoDB.
+        mongoengine.connect(database_name, DATABASE_ALIAS, **self.connection_settings)
 
     def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity, derive_from, derive_op, derive_args, value_type):
         """
