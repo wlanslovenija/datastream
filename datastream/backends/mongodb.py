@@ -939,7 +939,7 @@ class Datapoints(api.Datapoints):
         if self.cursor is None:
             return 0
 
-        return self.cursor.count(with_limit_and_skip=True)
+        return self.cursor.count()
 
     def __iter__(self):
         if self.cursor is None:
@@ -1716,7 +1716,7 @@ class Backend(object):
 
         return result
 
-    def get_data(self, stream_id, granularity, start=None, end=None, start_exclusive=None, end_exclusive=None, reverse=False, value_downsamplers=None, time_downsamplers=None, limit=None):
+    def get_data(self, stream_id, granularity, start=None, end=None, start_exclusive=None, end_exclusive=None, reverse=False, value_downsamplers=None, time_downsamplers=None):
         """
         Retrieves data from a certain time range and of a certain granularity.
 
@@ -1729,7 +1729,6 @@ class Backend(object):
         :param reverse: Should datapoints be returned in oldest to newest order (false), or in reverse (true)
         :param value_downsamplers: The list of downsamplers to limit datapoint values to (optional)
         :param time_downsamplers: The list of downsamplers to limit timestamp values to (optional)
-        :param limit: Limit the number of returned datapoints (optional)
         :return: A `Datapoints` iterator over datapoints
         """
 
@@ -1845,9 +1844,6 @@ class Backend(object):
             'm': stream.id,
             '_id': time_query,
         }, downsamplers).sort('_id', -1 if reverse else 1)
-
-        if limit is not None:
-            datapoints = datapoints.limit(limit)
 
         return Datapoints(self, datapoints, empty_time)
 

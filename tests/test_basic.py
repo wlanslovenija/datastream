@@ -1442,12 +1442,6 @@ class BasicTest(MongoDBBasicTest):
         s = datetime.datetime(2000, 1, 1, 12, 0, 0)
         e = datetime.datetime(2000, 1, 1, 12, 1, 0)
 
-        # Limit
-        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end=e, limit=1)
-        self.assertEqual(len(data), 1)
-        self.assertEqual(len(list(data)), 1)
-        self._test_data_types(data)
-
         # SECONDS
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s, end=e)
         self.assertEqual(len(data), 61)
