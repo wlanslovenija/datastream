@@ -7,6 +7,7 @@ import time
 import warnings
 import sys
 import threading
+import unittest
 
 import pytz
 
@@ -16,11 +17,6 @@ import datastream
 from datastream import exceptions
 
 from datastream.backends import mongodb
-
-if sys.version_info < (2, 7):
-    import unittest2 as unittest
-else:
-    import unittest
 
 
 class MongoDBBasicTest(unittest.TestCase):

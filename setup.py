@@ -36,7 +36,6 @@ if __name__ == '__main__':
             'mongoengine>=0.8.1',
             'pymongo>=2.2.1',
             'pytz>=2012h',
-            'unittest2',
         ],
         test_suite='tests',
     )

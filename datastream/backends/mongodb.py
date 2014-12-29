@@ -8,7 +8,7 @@ import os
 import struct
 import sys
 import threading
-import time
+import time as time_module
 import uuid
 import warnings
 
@@ -162,7 +162,7 @@ class DownsamplersBase(object):
             pass
 
     @utils.class_property
-    def values(cls):
+    def values(cls): # pylint: disable=no-self-argument
         if not hasattr(cls, '_values'):
             cls._values = tuple([
                 getattr(cls, name)
@@ -1636,7 +1636,7 @@ class Backend(object):
             stream.save()
 
         if getattr(self._test_concurrency, 'sleep', False):
-            time.sleep(DOWNSAMPLE_SAFETY_MARGIN // 2)
+            time_module.sleep(DOWNSAMPLE_SAFETY_MARGIN // 2)
 
         # Append the datapoint into appropriate granularity
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
@@ -1657,7 +1657,7 @@ class Backend(object):
         }
 
         # Call test callback after everything
-        if self._test_callback is not None:
+        if callable(self._test_callback):
             self._test_callback(**ret)
 
         return ret
@@ -1986,7 +1986,7 @@ class Backend(object):
             oid += struct.pack('>i', int(calendar.timegm(timestamp.utctimetuple())))
         else:
             # We add possible _time_offset which is used in debugging to artificially change time
-            oid += struct.pack('>i', int(time.time() + total_seconds(self._time_offset)))
+            oid += struct.pack('>i', int(time_module.time() + total_seconds(self._time_offset)))
 
         # 3 bytes machine
         oid += objectid.ObjectId._machine_bytes

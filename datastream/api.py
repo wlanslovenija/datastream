@@ -1,5 +1,3 @@
-from __future__ import absolute_import
-
 import datetime
 import inspect
 
@@ -10,33 +8,40 @@ from . import exceptions, utils
 
 class Granularity(object):
     class _Base(object):
+        # To be overridden.
+        _order = None
+        _key = None
+        _round_rule = None
+        _name = None
+        _duration = None
+
         class _BaseMetaclass(type):
-            def __lt__(self, other):
-                return self._order < other._order
+            def __lt__(cls, other):
+                return cls._order < other._order
 
-            def __gt__(self, other):
-                return self._order > other._order
+            def __gt__(cls, other):
+                return cls._order > other._order
 
-            def __le__(self, other):
-                return self._order <= other._order
+            def __le__(cls, other):
+                return cls._order <= other._order
 
-            def __ge__(self, other):
-                return self._order >= other._order
+            def __ge__(cls, other):
+                return cls._order >= other._order
 
-            def __eq__(self, other):
-                return self._order == other._order
+            def __eq__(cls, other):
+                return cls._order == other._order
 
-            def __str__(self):
-                return self._name
+            def __str__(cls):
+                return cls._name
 
         __metaclass__ = _BaseMetaclass
 
         @utils.class_property
-        def name(cls):
+        def name(cls): # pylint: disable=no-self-argument
             return cls._name
 
         @utils.class_property
-        def key(cls):
+        def key(cls): # pylint: disable=no-self-argument
             return cls._key
 
         @classmethod
@@ -111,7 +116,7 @@ class Granularity(object):
         _duration = 86400
 
     @utils.class_property
-    def values(cls):
+    def values(cls): # pylint: disable=no-self-argument
         if not hasattr(cls, '_values'):
             cls._values = tuple(sorted(
                 [
@@ -166,8 +171,8 @@ class Stream(object):
             del self.tags['earliest_datapoint']
             del self.tags['downsampled_until']
             del self.tags['value_type']
-        except KeyError, e:
-            raise ValueError("Supplied tags are missing %s." % str(e))
+        except KeyError, exception:
+            raise ValueError("Supplied tags are missing %s." % exception)
 
 RESERVED_TAGS = (
     'stream_id',
@@ -215,14 +220,14 @@ DERIVE_OPERATORS = {
     'counter_derivative': 'COUNTER_DERIVATIVE', # derivative of a monotonically increasing counter stream
 }
 
-VALUE_TYPES = set([
+VALUE_TYPES = {
     'numeric',
     'graph',
-])
+}
 
 
 class ResultsBase(object):
-    def batch_size(self, batch_size):
+    def batch_size(self, batch_size): # pylint: disable=unused-argument
         # Ignore by default, this is just for optimization
         return
 
