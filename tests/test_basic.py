@@ -1740,6 +1740,92 @@ class BasicTest(MongoDBBasicTest):
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Days, start=datetime.datetime.min)
         self.assertEqual(len(data), 0)
 
+    def test_batch_size_and_slice(self):
+        # A MongoDB specific test. Using internal __retrieved from a MongoDB cursor.
+
+        query_tags = {
+            'name': 'foodata',
+        }
+        tags = {}
+
+        stream_id = self.datastream.ensure_stream(query_tags, tags, self.value_downsamplers, datastream.Granularity.Seconds)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0)
+        for i in range(1200):
+            self.datastream.append(stream_id, i, ts)
+            ts += datetime.timedelta(seconds=1)
+
+        s = datetime.datetime(2000, 1, 1, 12, 0, 0)
+
+        def get_retrieved(cursor):
+            return getattr(cursor, '_%s__retrieved' % cursor.__class__.__name__)
+
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s)
+        cursor = data._get_backend_cursor()
+
+        # Testing batch size. We want that a batch size of documents is transferred even if only
+        # a subset of documents is really used.
+        data.batch_size(200)
+
+        # 0 to begin with.
+        self.assertEqual(get_retrieved(cursor), 0)
+
+        # Let's read 100 documents.
+        for i, d in enumerate(data):
+            if i >= 100:
+                break
+
+        # But 200 documents should be transferred.
+        self.assertEqual(get_retrieved(cursor), 200)
+
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s)
+        cursor = data._get_backend_cursor()
+
+        data.batch_size(1000)
+        self.assertEqual(get_retrieved(cursor), 0)
+        for i, d in enumerate(data):
+            if i >= 100:
+                break
+        self.assertEqual(get_retrieved(cursor), 1000)
+
+        # Testing if slicing transfers only a subset of documents.
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s)
+        cursor = data._get_backend_cursor()
+
+        self.assertEqual(get_retrieved(cursor), 0)
+        self.assertEqual(len(list(data)), 1200)
+        self.assertEqual(get_retrieved(cursor), 1200)
+
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s)
+        cursor = data._get_backend_cursor()
+
+        self.assertEqual(get_retrieved(cursor), 0)
+        self.assertEqual(len(list(data[0:100])), 100)
+        self.assertEqual(get_retrieved(cursor), 100)
+
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s)
+        cursor = data._get_backend_cursor()
+
+        self.assertEqual(get_retrieved(cursor), 0)
+        self.assertEqual(len(list(data[100:200])), 100)
+        self.assertEqual(get_retrieved(cursor), 100)
+
+        # A bad approach. First doing the list and then slicing. This transfers everything.
+
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s)
+        cursor = data._get_backend_cursor()
+
+        self.assertEqual(get_retrieved(cursor), 0)
+        self.assertEqual(len(list(data)[0:100]), 100)
+        self.assertEqual(get_retrieved(cursor), 1200)
+
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=s)
+        cursor = data._get_backend_cursor()
+
+        self.assertEqual(get_retrieved(cursor), 0)
+        self.assertEqual(len(list(data)[100:200]), 100)
+        self.assertEqual(get_retrieved(cursor), 1200)
+
 
 @unittest.skip('stress test')
 class StressTest(MongoDBBasicTest):

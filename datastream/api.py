@@ -243,6 +243,9 @@ class ResultsBase(object):
     def __getitem__(self, key):
         raise NotImplementedError
 
+    def _get_backend_cursor(self):
+        # Very internal. Just for debugging and testing.
+        raise NotImplementedError
 
 class Streams(ResultsBase):
     pass

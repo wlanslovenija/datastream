@@ -924,6 +924,12 @@ class Streams(api.Streams):
         else:
             raise TypeError
 
+    def _get_backend_cursor(self):
+        if self.queryset is None:
+            return None
+
+        return self.queryset._cursor_obj
+
 
 class Datapoints(api.Datapoints):
     def __init__(self, datastream, cursor=None, empty_time=False):
@@ -939,7 +945,7 @@ class Datapoints(api.Datapoints):
         if self.cursor is None:
             return 0
 
-        return self.cursor.count()
+        return self.cursor.count(with_limit_and_skip=True)
 
     def __iter__(self):
         if self.cursor is None:
@@ -959,6 +965,8 @@ class Datapoints(api.Datapoints):
         else:
             raise TypeError
 
+    def _get_backend_cursor(self):
+        return self.cursor
 
 class DownsampleState(mongoengine.EmbeddedDocument):
     timestamp = mongoengine.DateTimeField()
