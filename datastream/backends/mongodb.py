@@ -1474,7 +1474,7 @@ class Backend(object):
             # Returned count is 1 if stream is found even if nothing changed, this is what we want
             raise exceptions.StreamNotFound
 
-    def _get_stream_queryset(self, query_tags):
+    def _get_stream_queryset(self, query_tags, allow_stream_id=True):
         """
         Returns a queryset that matches the specified stream tags.
 
@@ -1489,7 +1489,7 @@ class Backend(object):
 
         query_set = Stream.objects.all()
 
-        if 'stream_id' in query_tags:
+        if allow_stream_id and 'stream_id' in query_tags:
             query_set = query_set.filter(external_id=uuid.UUID(query_tags['stream_id']))
             del query_tags['stream_id']
 
@@ -1506,7 +1506,9 @@ class Backend(object):
         :return: A `Streams` iterator over matched stream descriptors
         """
 
-        return Streams(self, self._get_stream_queryset(query_tags))
+        # We do not specially process stream_id in find_streams.
+        # One should use get_tags instead.
+        return Streams(self, self._get_stream_queryset(query_tags, False))
 
     def _supported_timestamp_range(self, timestamp):
         """

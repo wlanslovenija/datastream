@@ -1883,6 +1883,29 @@ class BasicTest(MongoDBBasicTest):
 
         self.assertEqual(len(list(data)), 1)
 
+    def test_find_streams(self):
+        # Make sure we are starting with an empty database.
+        self.assertEqual(len(self.datastream.find_streams()), 0)
+
+        # Run some stuff to get it non-empty.
+        self.test_basic()
+
+        # One stream at the end.
+        self.assertEqual(len(self.datastream.find_streams()), 1)
+
+        stream_id = self.datastream.find_streams()[0]['stream_id']
+
+        # We do not allow finding by stream_id.
+        self.assertEqual(len(self.datastream.find_streams({'stream_id': stream_id})), 0)
+
+        # But do by other tags.
+        self.assertEqual(len(self.datastream.find_streams({'name': 'xyz'})), 1)
+        self.assertEqual(len(self.datastream.find_streams({'x': 2})), 1)
+
+        # But other queries can use stream_id.
+        self.datastream.delete_streams({'stream_id': stream_id})
+        self.assertEqual(len(self.datastream.find_streams()), 0)
+
 
 @unittest.skip('stress test')
 class StressTest(MongoDBBasicTest):
