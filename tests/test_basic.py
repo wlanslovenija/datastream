@@ -1887,20 +1887,54 @@ class BasicTest(MongoDBBasicTest):
         # Make sure we are starting with an empty database.
         self.assertEqual(len(self.datastream.find_streams()), 0)
 
-        # Run some stuff to get it non-empty.
-        self.test_basic()
+        # Ensure a stream.
+        query_tags = {
+            'title': 'Stream 1',
+        }
+        tags = {
+            'visualization': {
+                'time_downsamplers': [
+                    'mean',
+                ],
+                'hidden': False,
+                'minimum': 0,
+                'type': 'line',
+                'value_downsamplers': [
+                    'mean',
+                    'min',
+                    'max',
+                ],
+            },
+            'stream_number': 1,
+        }
+        stream_id = self.datastream.ensure_stream(query_tags, tags, self.value_downsamplers, datastream.Granularity.Seconds)
 
         # One stream at the end.
         self.assertEqual(len(self.datastream.find_streams()), 1)
 
-        stream_id = self.datastream.find_streams()[0]['stream_id']
-
         # We do not allow finding by stream_id.
         self.assertEqual(len(self.datastream.find_streams({'stream_id': stream_id})), 0)
 
+        # Internal tags should not be exposed through the API.
+        self.assertEqual(len(self.datastream.find_streams({'tags': {'value_type': 'numeric'}})), 0)
+        # Seconds, because this is class name in the database.
+        self.assertEqual(len(self.datastream.find_streams({'tags': {'highest_granularity': 'Seconds'}})), 0)
+
         # But do by other tags.
-        self.assertEqual(len(self.datastream.find_streams({'name': 'xyz'})), 1)
-        self.assertEqual(len(self.datastream.find_streams({'x': 2})), 1)
+        self.assertEqual(len(self.datastream.find_streams({'title': 'Stream 1'})), 1)
+        self.assertEqual(len(self.datastream.find_streams({'title': {'iexact': 'stream 1'}})), 1)
+        self.assertEqual(len(self.datastream.find_streams({'title': {'iexact': 'strEAm 1'}})), 1)
+        self.assertEqual(len(self.datastream.find_streams({'title': {'icontains': 'strEAm'}})), 1)
+        self.assertEqual(len(self.datastream.find_streams({'stream_number': 1})), 1)
+        self.assertEqual(len(self.datastream.find_streams({'stream_number': {'gte': 1}})), 1)
+        self.assertEqual(len(self.datastream.find_streams({'stream_number': {'gt': 1}})), 0)
+        self.assertEqual(len(self.datastream.find_streams({'visualization': {'value_downsamplers': 'mean'}})), 1)
+        self.assertEqual(len(self.datastream.find_streams({'visualization': {'value_downsamplers': {'in': ['mean']}}})), 1)
+        self.assertEqual(len(self.datastream.find_streams({'visualization': {'value_downsamplers': {'all': ['mean', 'min']}}})), 1)
+        self.assertEqual(len(self.datastream.find_streams({'visualization': {'value_downsamplers': {'all': ['mean', 'foobar']}}})), 0)
+
+        with self.assertRaises(exceptions.ReservedTagNameError):
+            self.assertEqual(len(self.datastream.find_streams({'andmore__bar': 'value'})), 1)
 
         # But other queries can use stream_id.
         self.datastream.delete_streams({'stream_id': stream_id})

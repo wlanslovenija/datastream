@@ -1,3 +1,4 @@
+import collections
 import datetime
 import inspect
 
@@ -277,6 +278,22 @@ class Datastream(object):
         # Very internal. Just for debugging and testing.
         self.backend._switch_database(database_name)
 
+    def _check_query_tags(self, tags):
+        for key, value in tags.iteritems():
+            # One should use nested dicts and not `__`.
+            if '__' in key:
+                raise exceptions.ReservedTagNameError("Reserved tag name used: %s" % key)
+
+            if isinstance(value, collections.Mapping):
+                self._check_query_tags(value)
+
+    def _check_tags(self, tags):
+        for key, value in tags.iteritems():
+            if key in RESERVED_TAGS:
+                raise exceptions.ReservedTagNameError("Reserved tag name used: %s" % key)
+
+        self._check_query_tags(tags)
+
     def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity, derive_from=None, derive_op=None, derive_args=None, value_type=None):
         """
         Ensures that a specified stream exists.
@@ -293,6 +310,9 @@ class Datastream(object):
         :param value_type: Optional value type (defaults to `numeric`)
         :return: A stream identifier
         """
+
+        self._check_query_tags(query_tags or {})
+        self._check_tags(tags or {})
 
         if highest_granularity not in Granularity.values:
             raise exceptions.UnsupportedGranularity("'highest_granularity' is not a valid value: '%s'" % highest_granularity)
@@ -336,9 +356,7 @@ class Datastream(object):
         :param tags: A dictionary of new tags
         """
 
-        for key in tags.keys():
-            if key in RESERVED_TAGS:
-                raise exceptions.ReservedTagNameError
+        self._check_tags(tags)
 
         self.backend.update_tags(stream_id, tags)
 
@@ -349,6 +367,8 @@ class Datastream(object):
         :param stream_id: Stream identifier
         :param tag: Dictionary describing the tag(s) to remove (values are ignored)
         """
+
+        self._check_tags(tag)
 
         self.backend.remove_tag(stream_id, tag)
 
@@ -371,6 +391,8 @@ class Datastream(object):
         :param query_tags: Tags that should be matched to streams
         :return: A `Streams` iterator over matched stream descriptors
         """
+
+        self._check_query_tags(query_tags or {})
 
         return self.backend.find_streams(query_tags)
 
@@ -459,6 +481,8 @@ class Datastream(object):
                  for each datapoint created while downsampling, if `return_datapoints` was set
         """
 
+        self._check_query_tags(query_tags or {})
+
         if until is not None and until.tzinfo is None:
             until = until.replace(tzinfo=pytz.utc)
 
@@ -471,6 +495,8 @@ class Datastream(object):
         :param query_tags: Tags that should be matched to streams
         """
 
+        self._check_query_tags(query_tags or {})
+
         return self.backend.backprocess_streams(query_tags)
 
     def delete_streams(self, query_tags=None):
@@ -481,5 +507,7 @@ class Datastream(object):
 
         :param query_tags: Tags that should be matched to streams
         """
+
+        self._check_query_tags(query_tags or {})
 
         self.backend.delete_streams(query_tags)

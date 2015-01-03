@@ -1423,8 +1423,6 @@ class Backend(object):
 
         if prefix is None:
             prefix = 'tags'
-        else:
-            prefix = '%s__tags' % prefix
 
         for k, v in tags.iteritems():
             if isinstance(v, collections.Mapping):
