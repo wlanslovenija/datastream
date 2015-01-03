@@ -1504,9 +1504,10 @@ class Backend(object):
         :return: A `Streams` iterator over matched stream descriptors
         """
 
-        # We do not specially process stream_id in find_streams.
-        # One should use get_tags instead.
-        return Streams(self, self._get_stream_queryset(query_tags, False))
+        # We do not specially process stream_id in find_streams. One should use get_tags
+        # instead. We force order by _id so that it is predictable and pagination works
+        # as expected. We do not provide API for custom sorting anyway.
+        return Streams(self, self._get_stream_queryset(query_tags, False).order_by('_id'))
 
     def _supported_timestamp_range(self, timestamp):
         """
