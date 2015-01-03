@@ -1442,7 +1442,7 @@ class Backend(object):
         :param tags: A dictionary of new tags
         """
 
-        if not Stream.objects(external_id=uuid.UUID(stream_id)).update(**self._get_tag_query_dict('set', tags)):
+        if not Stream.objects(external_id=uuid.UUID(stream_id)).update(**self._get_tag_query_dict('set__tags', tags)):
             # Returned count is 1 if stream is found even if nothing changed, this is what we want
             raise exceptions.StreamNotFound
 
@@ -1454,7 +1454,7 @@ class Backend(object):
         :param tag: Dictionary describing the tag(s) to remove (values are ignored)
         """
 
-        if not Stream.objects(external_id=uuid.UUID(stream_id)).update(**self._get_tag_query_dict('unset', tag, 1)):
+        if not Stream.objects(external_id=uuid.UUID(stream_id)).update(**self._get_tag_query_dict('unset__tags', tag, 1)):
             # Returned count is 1 if stream is found even if nothing removed, this is what we want
             raise exceptions.StreamNotFound
 
