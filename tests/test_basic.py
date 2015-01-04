@@ -123,22 +123,24 @@ class BasicTest(MongoDBBasicTest):
         with self.time_offset():
             self.assertItemsEqual(self.datastream.downsample_streams(), [])
 
-        data = self.datastream.get_data(stream_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
+        now = datetime.datetime.utcnow()
+
+        data = self.datastream.get_data(stream_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), now)
         self.assertEqual(len(data), 0)
 
-        data = self.datastream.get_data(stream_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
+        data = self.datastream.get_data(stream_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0), now)
         self.assertEqual(len(data), 0)
 
         # Callback should not have been fired
         self.assertItemsEqual(self._callback_points, [])
 
-        self.assertEqual(self.datastream.append(stream_id, 42)['datapoint']['v'], 42)
+        self.assertEqual(self.datastream.append(stream_id, 42)['datapoint']['v'], 42, now)
         self.assertRaises(datastream.exceptions.InvalidTimestamp, lambda: self.datastream.append(stream_id, 42, datetime.datetime.min))
 
-        data = self.datastream.get_data(stream_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), end_exclusive=datetime.datetime.utcfromtimestamp(time.time()))
+        data = self.datastream.get_data(stream_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), end_exclusive=now)
         self.assertEqual(len(data), 0)
 
-        data = self.datastream.get_data(stream_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), datetime.datetime.utcfromtimestamp(time.time()))
+        data = self.datastream.get_data(stream_id, datastream.Granularity.Seconds, datetime.datetime.utcfromtimestamp(0), now)
         self.assertEqual(len(data), 1)
         data = list(data)
         self._test_data_types(data)
@@ -172,7 +174,7 @@ class BasicTest(MongoDBBasicTest):
             stream_id,
             datastream.Granularity.Seconds,
             datetime.datetime.utcfromtimestamp(0),
-            datetime.datetime.utcfromtimestamp(time.time()) + offset,
+            now + offset,
         )
         self.assertEqual(len(data), 2)
         data = list(data)
