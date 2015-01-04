@@ -1161,27 +1161,30 @@ class BasicTest(MongoDBBasicTest):
         with self.assertRaises(ValueError):
             self.datastream.append(stream_id, {}, datetime.datetime(2000, 1, 1, 0, 0, 0))
 
-        # Test invalid graph
+        # Test invalid graphs.
         with self.assertRaises(ValueError):
+            # Missing ID field "i".
             self.datastream.append(
                 stream_id,
                 {
                     'v': [{'foo': 'bar'}],
                 },
-                datetime.datetime(2000, 1, 1, 0, 0, 0)
+                datetime.datetime(2000, 1, 1, 0, 0, 0),
             )
 
         with self.assertRaises(ValueError):
+            # Missing ID field "i".
             self.datastream.append(
                 stream_id,
                 {
                     'v': [{'foo': 'bar'}],
-                    'e': []
+                    'e': [],
                 },
-                datetime.datetime(2000, 1, 1, 0, 0, 0)
+                datetime.datetime(2000, 1, 1, 0, 0, 0),
             )
 
         with self.assertRaises(ValueError):
+            # Two nodes with the same ID.
             self.datastream.append(
                 stream_id,
                 {
@@ -1189,25 +1192,13 @@ class BasicTest(MongoDBBasicTest):
                         {'i': 'bar'},
                         {'i': 'bar'},
                     ],
-                    'e': []
+                    'e': [],
                 },
-                datetime.datetime(2000, 1, 1, 0, 0, 0)
+                datetime.datetime(2000, 1, 1, 0, 0, 0),
             )
 
         with self.assertRaises(ValueError):
-            self.datastream.append(
-                stream_id,
-                {
-                    'v': [
-                        {'i': 'foo'},
-                        {'i': 'bar'},
-                    ],
-                    'e': [{}]
-                },
-                datetime.datetime(2000, 1, 1, 0, 0, 0)
-            )
-
-        with self.assertRaises(ValueError):
+            # Edge without values.
             self.datastream.append(
                 stream_id,
                 {
@@ -1215,12 +1206,13 @@ class BasicTest(MongoDBBasicTest):
                         {'i': 'foo'},
                         {'i': 'bar'},
                     ],
-                    'e': [{'f': 'foo'}]
+                    'e': [{}],
                 },
-                datetime.datetime(2000, 1, 1, 0, 0, 0)
+                datetime.datetime(2000, 1, 1, 0, 0, 0),
             )
 
         with self.assertRaises(ValueError):
+            # Edge only with from value.
             self.datastream.append(
                 stream_id,
                 {
@@ -1228,9 +1220,23 @@ class BasicTest(MongoDBBasicTest):
                         {'i': 'foo'},
                         {'i': 'bar'},
                     ],
-                    'e': [{'f': 'foo', 't': 'wtf'}]
+                    'e': [{'f': 'foo'}],
                 },
-                datetime.datetime(2000, 1, 1, 0, 0, 0)
+                datetime.datetime(2000, 1, 1, 0, 0, 0),
+            )
+
+        with self.assertRaises(ValueError):
+            # Edge only with unknown to value.
+            self.datastream.append(
+                stream_id,
+                {
+                    'v': [
+                        {'i': 'foo'},
+                        {'i': 'bar'},
+                    ],
+                    'e': [{'f': 'foo', 't': 'wtf'}],
+                },
+                datetime.datetime(2000, 1, 1, 0, 0, 0),
             )
 
         # Test graph insertion
@@ -1243,9 +1249,21 @@ class BasicTest(MongoDBBasicTest):
                 ],
                 'e': [
                     {'f': 'foo', 't': 'bar'},
-                ]
+                ],
             },
-            datetime.datetime(2000, 1, 1, 0, 0, 0)
+            datetime.datetime(2000, 1, 1, 0, 0, 0),
+        )
+
+        self.datastream.append(
+            stream_id,
+            {
+                'v': [
+                    {'i': 'foo'},
+                    {'i': 'bar'},
+                ],
+                'e': [],
+            },
+            datetime.datetime(2000, 1, 1, 0, 0, 1),
         )
 
         stream_id = self.datastream.ensure_stream({'name': 'loo'}, {}, ['count'], datastream.Granularity.Seconds, value_type='nominal')
