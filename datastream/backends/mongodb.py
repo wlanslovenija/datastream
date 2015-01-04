@@ -1571,7 +1571,10 @@ class Backend(object):
             if isinstance(value, numbers.Number):
                 value = serialize_numeric_value(value)
             elif isinstance(value, dict):
-                # Assume that we are inserting a downsampled datapoint
+                # Assume that we are inserting a downsampled datapoint. Users can use this when the source
+                # of their values already provides information from multiple samples. For example, pinging
+                # over the Internet sends multiple packets and then returns min, max, mean times.
+                # By storing directly min, max, and mean values, no information is lost.
                 valid_keys = set()
                 for ds_name in stream.value_downsamplers:
                     key = api.VALUE_DOWNSAMPLERS[ds_name]

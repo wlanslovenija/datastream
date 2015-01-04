@@ -30,7 +30,13 @@ Currently supported types are:
 * ``numeric`` – each datapoint value is a number
 * ``graph`` – each datapoint value is a graph
 
-Graph format is::
+Numeric values can be integers, floats, :py:class:`decimal.Decimal`, or any other instance of :py:class:`numbers.Number`.
+Alternatively, one can append an already downsampled value in the same format and with all values downsampled values for
+a given stream have. This is useful when the source of their values already provides information from multiple
+samples. For example, pinging over the Internet sends multiple packets and then returns min, max, mean times.
+By storing directly min, max, and mean values, no information is lost and can be reused by Datastream API.
+
+Graph values are stored as dicts in the format::
 
     {
         "v": [
