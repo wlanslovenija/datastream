@@ -193,7 +193,7 @@ class ValueDownsamplers(DownsamplersBase):
         """
 
         name = 'count'
-        supports_types = ('numeric', 'graph')
+        supports_types = ('numeric', 'graph', 'nominal')
 
         def initialize(self):
             self.count = 0
@@ -1591,6 +1591,12 @@ class Backend(object):
                 pass
             else:
                 raise TypeError("Streams of type 'numeric' may only accept numbers or downsampled datapoints!")
+        elif stream.value_type == 'nominal':
+            # We allow arbitrary values to be stored for nominal values. But do remember that they are stored
+            # as-is in the database so repeating the same huge value multiple times will be stored multiple
+            # times. If values will be repeating it is better to instead store only some small keys representing
+            # them.
+            pass
         elif stream.value_type == 'graph':
             if isinstance(value, dict):
                 try:

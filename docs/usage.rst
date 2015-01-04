@@ -28,6 +28,7 @@ Datastream API supports various types for values stored as datapoints. Types inf
 Currently supported types are:
 
 * ``numeric`` – each datapoint value is a number
+* ``nominal`` – each datapoint value is a an arbitrary value, but most often a simple label
 * ``graph`` – each datapoint value is a graph
 
 Numeric values can be integers, floats, :py:class:`decimal.Decimal`, or any other instance of :py:class:`numbers.Number`.
@@ -36,7 +37,12 @@ a given stream have. This is useful when the source of their values already prov
 samples. For example, pinging over the Internet sends multiple packets and then returns min, max, mean times.
 By storing directly min, max, and mean values, no information is lost and can be reused by Datastream API.
 
-Graph values are stored as dicts in the format::
+`Nominal values`_ (also known as qualitative) can be any JSON-serializable arbitrary value, but most often they
+are a simple label. Values are stored as-is in the database so repeating the same huge value multiple times will
+be stored multiple times. If values will be repeating it is better to instead store only some small keys representing
+them. Nominal values do not have a defined order between them.
+
+`Graph values`_ are stored as dicts in the format::
 
     {
         "v": [
@@ -52,6 +58,9 @@ It contains a list of vertices ``v`` where each vertex element contains its ID `
 Vertices can contain additional fields which are ignored, but might be used by downsamplers. List of edges ``e``
 contains edges from vertex with ID equal to ``f``, to vertex with ID equal to ``t``. Additional fields are ignored,
 but might be used by downsamplers as well.
+
+.. _Nominal values: https://en.wikipedia.org/wiki/Level_of_measurement#Nominal_scale
+.. _Graph values: https://en.wikipedia.org/wiki/Graph_%28mathematics%29
 
 Downsampling
 ------------

@@ -1131,7 +1131,7 @@ class BasicTest(MongoDBBasicTest):
         with self.assertRaises(exceptions.UnsupportedDownsampler):
             self.datastream.ensure_stream({'name': 'bar'}, {}, self.value_downsamplers, datastream.Granularity.Seconds, value_type='graph')
         with self.assertRaises(exceptions.UnsupportedDeriveOperator):
-            stream_id = self.datastream.ensure_stream(
+            self.datastream.ensure_stream(
                 {'name': 'derived'},
                 {},
                 ['count'],
@@ -1139,6 +1139,20 @@ class BasicTest(MongoDBBasicTest):
                 derive_from=[stream_id, stream_id],
                 derive_op='sum',
                 value_type='graph',
+            )
+
+        stream_id = self.datastream.ensure_stream({'name': 'zoo'}, {}, ['count'], datastream.Granularity.Seconds, value_type='nominal')
+        with self.assertRaises(exceptions.UnsupportedDownsampler):
+            self.datastream.ensure_stream({'name': 'bar'}, {}, self.value_downsamplers, datastream.Granularity.Seconds, value_type='nominal')
+        with self.assertRaises(exceptions.UnsupportedDeriveOperator):
+            self.datastream.ensure_stream(
+                {'name': 'derived'},
+                {},
+                ['count'],
+                datastream.Granularity.Seconds,
+                derive_from=[stream_id, stream_id],
+                derive_op='sum',
+                value_type='nominal',
             )
 
         stream_id = self.datastream.ensure_stream({'name': 'goo'}, {}, ['count'], datastream.Granularity.Seconds, value_type='graph')
@@ -1233,6 +1247,17 @@ class BasicTest(MongoDBBasicTest):
             },
             datetime.datetime(2000, 1, 1, 0, 0, 0)
         )
+
+        stream_id = self.datastream.ensure_stream({'name': 'loo'}, {}, ['count'], datastream.Granularity.Seconds, value_type='nominal')
+
+        # We allow any value. There is no type checking between values of the same stream either.
+        values = [None, {}, 'label', {'foo': 'bar', 'z': 42}]
+        for value in values:
+            self.datastream.append(stream_id, value)
+
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=datetime.datetime.min)
+
+        self.assertEqual(values, [datapoint['v'] for datapoint in data])
 
     def test_concurrent_append(self):
         stream_id = self.datastream.ensure_stream({'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)

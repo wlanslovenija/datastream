@@ -225,6 +225,7 @@ DERIVE_OPERATORS = {
 VALUE_TYPES = {
     'numeric',
     'graph',
+    'nominal',
 }
 
 
