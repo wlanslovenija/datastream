@@ -197,6 +197,7 @@ VALUE_DOWNSAMPLERS = {
     'sum_squares': 'q', # sum of squares of all datapoints
     'std_dev': 'd', # standard deviation of all datapoints
     'count': 'c', # number of all datapoints
+    'median': 'n', # middle-ranked value of all datapoints
     'most_often': 'o', # the most often occurring value of all datapoints (key mnemonic: o for often)
     'least_often': 'r', # the least often occurring value of all datapoints (key mnemonic: r for rare)
     'frequencies': 'f', # for each value number of occurrences in all datapoints
