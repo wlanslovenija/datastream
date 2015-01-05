@@ -222,11 +222,11 @@ DERIVE_OPERATORS = {
     'counter_derivative': 'COUNTER_DERIVATIVE', # derivative of a monotonically increasing counter stream
 }
 
-VALUE_TYPES = {
+VALUE_TYPES = (
     'numeric',
     'graph',
     'nominal',
-}
+)
 
 
 class ResultsBase(object):
@@ -266,6 +266,7 @@ class Datastream(object):
     VALUE_DOWNSAMPLERS = VALUE_DOWNSAMPLERS
     TIME_DOWNSAMPLERS = TIME_DOWNSAMPLERS
     DERIVE_OPERATORS = DERIVE_OPERATORS
+    VALUE_TYPES = VALUE_TYPES
 
     def __init__(self, backend):
         """
