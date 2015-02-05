@@ -1481,6 +1481,31 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(data[0]['v']['s'], 180) # sum
         self.assertEqual(data[0]['v']['q'], 540) # sum of squares
 
+        # Try with various null values
+        stream_id = self.datastream.ensure_stream({'name': 'test2'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
+
+        ts0 = datetime.datetime(2000, 1, 1, 0, 0, 0, tzinfo=pytz.utc)
+        ts = ts0
+
+        for i in xrange(30):
+            self.datastream.append(stream_id, {'m': None, 's': None, 'l': None, 'u': None, 'q': None, 'd': None, 'c': None}, ts)
+            self.datastream.append(stream_id, {'m': 42, 's': 42, 'l': 42, 'u': 42, 'q': None, 'd': 0, 'c': 1}, ts)
+            ts += datetime.timedelta(seconds=1)
+
+        with self.time_offset():
+            self.datastream.downsample_streams()
+
+        data = self.datastream.get_data(stream_id, datastream.Granularity.Seconds10, start=ts0, end=ts)
+        data = list(data)
+        self._test_data_types(data)
+
+        self.assertEqual(data[0]['v']['c'], 10) # count
+        self.assertEqual(data[0]['v']['m'], 42) # mean
+        self.assertEqual(data[0]['v']['l'], 42) # minimum
+        self.assertEqual(data[0]['v']['u'], 42) # maximum
+        self.assertEqual(data[0]['v']['s'], 420) # sum
+        self.assertEqual(data[0]['v']['q'], None) # sum of squares
+
     def test_granularities(self):
         query_tags = {
             'name': 'foodata',

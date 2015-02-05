@@ -42,6 +42,9 @@ def deserialize_numeric_value(value):
     a conversion is not possible.
     """
 
+    if value is None:
+        return
+
     with decimal.localcontext() as ctx:
         ctx.prec = DECIMAL_PRECISION
 
@@ -201,6 +204,8 @@ class ValueDownsamplers(DownsamplersBase):
         def update(self, time, value):
             if isinstance(value, dict) and self.key in value:
                 value = value[self.key]
+                if value is None:
+                    value = 0
             else:
                 value = 1 if value is not None else 0
 
@@ -360,6 +365,10 @@ class ValueDownsamplers(DownsamplersBase):
             if n > 0:
                 s = deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum']])
 
+                if s is None:
+                    values[self.key] = None
+                    return
+
                 with decimal.localcontext() as ctx:
                     ctx.prec = DECIMAL_PRECISION
                     values[self.key] = serialize_numeric_value(to_decimal(s) / n)
@@ -387,6 +396,10 @@ class ValueDownsamplers(DownsamplersBase):
             else:
                 s = deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum']])
                 ss = deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum_squares']])
+
+                if s is None or ss is None:
+                    values[self.key] = None
+                    return
 
                 with decimal.localcontext() as ctx:
                     ctx.prec = DECIMAL_PRECISION
@@ -1973,6 +1986,7 @@ class Backend(object):
             # Skip downsampling of this stream as we have failed to acquire the lock
             return new_datapoints
 
+        last_granularity = None
         try:
             # Last datapoint timestamp of one higher granularity
             if stream.latest_datapoint:
@@ -1985,6 +1999,7 @@ class Backend(object):
                 higher_last_ts = self._min_timestamp
 
             for granularity in api.Granularity.values[api.Granularity.values.index(stream.highest_granularity) + 1:]:
+                last_granularity = granularity
                 state = stream.downsample_state.get(granularity.name, None)
                 rounded_timestamp = granularity.round_timestamp(min(until_timestamp, higher_last_ts))
                 # TODO: Why "can't compare offset-naive and offset-aware datetimes" is sometimes thrown here?
@@ -2000,6 +2015,8 @@ class Backend(object):
         except:
             # Only unlock the stream but do not save the descriptor as it might be corrupted
             Stream.objects(pk=stream.pk).update(set___lock_mt=datetime.datetime.min)
+            # Warn that an exception ocurred during processing of a stream
+            warnings.warn(exceptions.DatastreamWarning("Unhandled exception during downsampling of stream '%s', granularity '%s'." % (repr(stream.pk), repr(last_granularity))))
             raise
         else:
             # Ensure that the stream is unlocked and all changes are saved
