@@ -15,7 +15,7 @@ import warnings
 import pytz
 
 import pymongo
-from bson import objectid
+from bson import objectid, son
 
 import mongoengine
 
@@ -1101,16 +1101,27 @@ class Backend(object):
 
         # Ensure indices on datapoints collections (these collections are not defined through MongoEngine)
         db = mongoengine.connection.get_db(DATABASE_ALIAS)
+        server_info = db.command('buildinfo')
+        self._tokumx = 'tokumxVersion' in server_info
+
         for granularity in api.Granularity.values:
-            collection = getattr(db.datapoints, granularity.name)
-            collection.ensure_index([
-                ('m', pymongo.ASCENDING),
-                ('_id', pymongo.ASCENDING),
-            ])
-            collection.ensure_index([
-                ('m', pymongo.ASCENDING),
-                ('_id', pymongo.DESCENDING),
-            ])
+            if self._tokumx:
+                # Create a primary key index to avoid seconday indices. Use LZMA compression.
+                try:
+                    db.create_collection(
+                        'datapoints.%s' % granularity.name,
+                        primaryKey=son.SON([('m', 1), ('_id', 1)]),
+                        compression='lzma',
+                    )
+                except pymongo.errors.CollectionInvalid:
+                    # Collection already exists.
+                    pass
+            else:
+                collection = getattr(db.datapoints, granularity.name)
+                collection.ensure_index([
+                    ('m', pymongo.ASCENDING),
+                    ('_id', pymongo.ASCENDING),
+                ])
 
         # TODO: For some reason the indexes don't get created unless calling ensure_indexes
         Stream.ensure_indexes()
