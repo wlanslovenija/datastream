@@ -446,7 +446,7 @@ class Datastream(object):
 
         # TODO: Do we want to allow user to specify order of datapoints returned?
 
-        if start is None == start_exclusive is None:
+        if (start is None) == (start_exclusive is None):
             raise AttributeError("One and only one time range start must be specified.")
 
         if end is not None and end_exclusive is not None:
