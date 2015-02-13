@@ -85,6 +85,8 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(stream.highest_granularity, datastream.Granularity.Seconds)
         self.assertEqual(stream.earliest_datapoint, None)
         self.assertEqual(stream.latest_datapoint, None)
+        self.assertEqual(stream.value_type, 'numeric')
+        self.assertEqual(stream.value_type_options, {'high_accuracy': False})
 
         combined_tags = query_tags.copy()
         combined_tags.update(tags)
@@ -890,6 +892,34 @@ class BasicTest(MongoDBBasicTest):
 
         self.assertEqual([x['v']['m'] for x in data], [10.] + [None] * 9 + [20.] + [None] * 9 + [30.])
 
+    def test_high_accuracy(self):
+        stream_id = self.datastream.ensure_stream(
+            {'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds,
+            value_type='numeric',
+            value_type_options={'high_accuracy': True}
+        )
+
+        for i in xrange(40):
+            ts = datetime.datetime(2000, 1, 1, 12, 0, i, tzinfo=pytz.utc)
+            self.datastream.append(stream_id, decimal.Decimal('2.71828182845904523536028747135266249775724709369995957496696762'), ts)
+
+        with self.time_offset():
+            self.datastream.downsample_streams(until=ts + datetime.timedelta(hours=10))
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
+        data = list(data)
+        self._test_data_types(data)
+
+        for datapoint in data:
+            self.assertEqual(datapoint['v'], decimal.Decimal('2.71828182845904523536028747135266249775724709369995957496696762'))
+
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
+        data = list(data)
+        self._test_data_types(data)
+
+        self.assertEqual(data[0]['v']['m'], decimal.Decimal('2.71828182845904523536028747135266249775724709369995957496696762'))
+
     def test_big_integers(self):
         stream_id = self.datastream.ensure_stream({'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
 
@@ -1044,7 +1074,7 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(data[0]['t']['z'], ts) # last
         self.assertEqual(data[0]['t']['m'], ts) # mean
         self.assertEqual(data[0]['v']['c'], 5) # count
-        self.assertAlmostEqual(data[0]['v']['d'], decimal.Decimal('1.5811388300841898')) # standard deviation
+        self.assertAlmostEqual(data[0]['v']['d'], 1.4142135623730951) # standard deviation
         self.assertEqual(data[0]['v']['m'], 3.0) # mean
         self.assertEqual(data[0]['v']['l'], 1) # minimum
         self.assertEqual(data[0]['v']['q'], 55) # sum of squares
@@ -1126,6 +1156,8 @@ class BasicTest(MongoDBBasicTest):
     def test_stream_types(self):
         with self.assertRaises(exceptions.UnsupportedValueType):
             self.datastream.ensure_stream({'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds, value_type='wtfvaluewtf')
+        with self.assertRaises(TypeError):
+            self.datastream.ensure_stream({'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds, value_type='numeric', value_type_options='bar')
 
         stream_id = self.datastream.ensure_stream({'name': 'foo'}, {}, ['count'], datastream.Granularity.Seconds, value_type='graph')
         with self.assertRaises(exceptions.InconsistentStreamConfiguration):
@@ -1411,7 +1443,7 @@ class BasicTest(MongoDBBasicTest):
 
         def check_values(data, n):
             self.assertEqual(data[0]['v']['c'], n) # count
-            self.assertAlmostEqual(data[0]['v']['m'], decimal.Decimal(sum(src_data[:n])) / n) # mean
+            self.assertAlmostEqual(data[0]['v']['m'], float(sum(src_data[:n])) / n) # mean
             self.assertEqual(data[0]['v']['l'], min(src_data[:n])) # minimum
             self.assertEqual(data[0]['v']['u'], max(src_data[:n])) # maximum
             self.assertEqual(data[0]['v']['s'], sum(src_data[:n])) # sum

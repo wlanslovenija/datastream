@@ -3,6 +3,7 @@ import collections
 import datetime
 import decimal
 import inspect
+import math
 import numbers
 import os
 import struct
@@ -36,7 +37,7 @@ MAINTENANCE_LOCK_DURATION = 120
 DOWNSAMPLE_SAFETY_MARGIN = 10
 
 
-def deserialize_numeric_value(value):
+def deserialize_numeric_value(value, use_decimal=False):
     """
     Attempts to parse a value as a number and raises a type error in case
     a conversion is not possible.
@@ -45,54 +46,87 @@ def deserialize_numeric_value(value):
     if value is None:
         return
 
-    with decimal.localcontext() as ctx:
-        ctx.prec = DECIMAL_PRECISION
+    if use_decimal:
+        # Compute using arbitrary precision numbers.
+        with decimal.localcontext() as ctx:
+            ctx.prec = DECIMAL_PRECISION
 
-        if isinstance(value, (int, long)):
-            return value
-        elif isinstance(value, float):
-            decimal_value = +float_to_decimal(value)
-            int_value = int(decimal_value)
-            if int_value == decimal_value:
-                return int_value
-            else:
-                return decimal_value
-        elif isinstance(value, decimal.Decimal):
-            return value
-        elif isinstance(value, basestring):
-            try:
-                return int(value)
-            except ValueError:
+            if isinstance(value, (int, long)):
+                return value
+            elif isinstance(value, float):
+                decimal_value = +float_to_decimal(value)
+                int_value = int(decimal_value)
+                if int_value == decimal_value:
+                    return int_value
+                else:
+                    return decimal_value
+            elif isinstance(value, decimal.Decimal):
+                return value
+            elif isinstance(value, basestring):
                 try:
-                    return +decimal.Decimal(value)
-                except decimal.InvalidOperation:
-                    raise TypeError
+                    return int(value)
+                except ValueError:
+                    try:
+                        return +decimal.Decimal(value)
+                    except decimal.InvalidOperation:
+                        raise TypeError
+            else:
+                raise TypeError
+    else:
+        # Compute using floats.
+        if isinstance(value, (int, long, float)):
+            return value
+        elif isinstance(value, decimal.Decimal):
+            return float(value)
         else:
             raise TypeError
 
 
-def serialize_numeric_value(value):
+def serialize_numeric_value(value, use_decimal=False):
     """
-    Attempts to properly store a numeric value. If the value is not a number,
-    it is not converted and is returned unchanged.
+    Attempts to properly store a numeric value and raises a type error in case
+    a conversion is not possible.
     """
 
-    if isinstance(value, float):
+    if value is None:
+        return
+    elif isinstance(value, float):
         return value
-    elif isinstance(value, (int, long)) and (value > MAXIMUM_INTEGER or value < MINIMUM_INTEGER):
-        return str(value)
-    elif isinstance(value, decimal.Decimal):
-        int_value = int(value)
-        if MINIMUM_INTEGER <= value <= MAXIMUM_INTEGER and int_value == value:
-            return int_value
-        else:
-            float_value = float(value)
-            if value == float_to_decimal(float_value):
-                return float_value
-            else:
+
+    if use_decimal:
+        # Compute using arbitrary precision numbers.
+        if isinstance(value, (int, long)):
+            if (value > MAXIMUM_INTEGER or value < MINIMUM_INTEGER):
                 return str(value)
+            else:
+                return value
+        elif isinstance(value, decimal.Decimal):
+            int_value = int(value)
+            if MINIMUM_INTEGER <= value <= MAXIMUM_INTEGER and int_value == value:
+                return int_value
+            else:
+                float_value = float(value)
+                if value == float_to_decimal(float_value):
+                    return float_value
+                else:
+                    return str(value)
+        else:
+            raise TypeError
     else:
-        return value
+        # Compute using floats.
+        if isinstance(value, (int, long)):
+            if value > MAXIMUM_INTEGER or value < MINIMUM_INTEGER:
+                return float(value)
+
+            return value
+        elif isinstance(value, decimal.Decimal):
+            int_value = int(value)
+            if MINIMUM_INTEGER <= value <= MAXIMUM_INTEGER and int_value == value:
+                return int_value
+
+            return float(value)
+        else:
+            raise TypeError
 
 
 def middle_timestamp(dt, granularity):
@@ -213,7 +247,7 @@ class ValueDownsamplers(DownsamplersBase):
 
         def finish(self, output, timestamp, granularity):
             assert self.key not in output
-            output[self.key] = serialize_numeric_value(self.count)
+            output[self.key] = self.stream.serialize_numeric_value(self.count)
 
     class Sum(_Base):
         """
@@ -237,15 +271,18 @@ class ValueDownsamplers(DownsamplersBase):
                 self.sum = 0
 
             try:
-                with decimal.localcontext() as ctx:
-                    ctx.prec = DECIMAL_PRECISION
+                if self.stream.value_type_options.get('high_accuracy', False):
+                    with decimal.localcontext() as ctx:
+                        ctx.prec = DECIMAL_PRECISION
+                        self.sum += deserialize_numeric_value(value, use_decimal=True)
+                else:
                     self.sum += deserialize_numeric_value(value)
             except TypeError:
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'sum' downsampler." % repr(value)))
 
         def finish(self, output, timestamp, granularity):
             assert self.key not in output
-            output[self.key] = serialize_numeric_value(self.sum)
+            output[self.key] = self.stream.serialize_numeric_value(self.sum)
 
     class SumSquares(_Base):
         """
@@ -272,8 +309,12 @@ class ValueDownsamplers(DownsamplersBase):
                 self.sum = 0
 
             try:
-                with decimal.localcontext() as ctx:
-                    ctx.prec = DECIMAL_PRECISION
+                if self.stream.value_type_options.get('high_accuracy', False):
+                    with decimal.localcontext() as ctx:
+                        ctx.prec = DECIMAL_PRECISION
+                        value = deserialize_numeric_value(value, use_decimal=True)
+                        self.sum += value * value if square else value
+                else:
                     value = deserialize_numeric_value(value)
                     self.sum += value * value if square else value
             except TypeError:
@@ -281,7 +322,7 @@ class ValueDownsamplers(DownsamplersBase):
 
         def finish(self, output, timestamp, granularity):
             assert self.key not in output
-            output[self.key] = serialize_numeric_value(self.sum)
+            output[self.key] = self.stream.serialize_numeric_value(self.sum)
 
     class Min(_Base):
         """
@@ -302,7 +343,7 @@ class ValueDownsamplers(DownsamplersBase):
                 return
 
             try:
-                value = deserialize_numeric_value(value)
+                value = self.stream.deserialize_numeric_value(value)
             except TypeError:
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'min' downsampler." % repr(value)))
                 return
@@ -314,7 +355,7 @@ class ValueDownsamplers(DownsamplersBase):
 
         def finish(self, output, timestamp, granularity):
             assert self.key not in output
-            output[self.key] = serialize_numeric_value(self.min)
+            output[self.key] = self.stream.serialize_numeric_value(self.min)
 
     class Max(_Base):
         """
@@ -335,7 +376,7 @@ class ValueDownsamplers(DownsamplersBase):
                 return
 
             try:
-                value = deserialize_numeric_value(value)
+                value = self.stream.deserialize_numeric_value(value)
             except TypeError:
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'max' downsampler." % repr(value)))
                 return
@@ -347,7 +388,7 @@ class ValueDownsamplers(DownsamplersBase):
 
         def finish(self, output, timestamp, granularity):
             assert self.key not in output
-            output[self.key] = serialize_numeric_value(self.max)
+            output[self.key] = self.stream.serialize_numeric_value(self.max)
 
     class Mean(_Base):
         """
@@ -360,18 +401,21 @@ class ValueDownsamplers(DownsamplersBase):
 
         def postprocess(self, values):
             assert 'm' not in values
-            n = deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['count']])
+            n = self.stream.deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['count']])
 
             if n > 0:
-                s = deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum']])
+                s = self.stream.deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum']])
 
                 if s is None:
                     values[self.key] = None
                     return
 
-                with decimal.localcontext() as ctx:
-                    ctx.prec = DECIMAL_PRECISION
-                    values[self.key] = serialize_numeric_value(to_decimal(s) / n)
+                if self.stream.value_type_options.get('high_accuracy', False):
+                    with decimal.localcontext() as ctx:
+                        ctx.prec = DECIMAL_PRECISION
+                        values[self.key] = serialize_numeric_value(to_decimal(s) / n, use_decimal=True)
+                else:
+                    values[self.key] = serialize_numeric_value(float(s) / n)
             else:
                 values[self.key] = None
 
@@ -387,31 +431,47 @@ class ValueDownsamplers(DownsamplersBase):
 
         def postprocess(self, values):
             assert self.key not in values
-            n = deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['count']])
+            n = self.stream.deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['count']])
 
             if n == 0:
                 values[self.key] = None
             elif n == 1:
                 values[self.key] = 0
             else:
-                s = deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum']])
-                ss = deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum_squares']])
+                s = self.stream.deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum']])
+                ss = self.stream.deserialize_numeric_value(values[api.VALUE_DOWNSAMPLERS['sum_squares']])
 
                 if s is None or ss is None:
                     values[self.key] = None
                     return
 
-                with decimal.localcontext() as ctx:
-                    ctx.prec = DECIMAL_PRECISION
-                    try:
-                        std = (n * ss - s ** 2) / to_decimal(n * (n - 1))
-                        if abs(std) < decimal.Decimal('0.00000001'):
-                            std = decimal.Decimal(0)
+                try:
+                    if self.stream.value_type_options.get('high_accuracy', False):
+                        with decimal.localcontext() as ctx:
+                            ctx.prec = DECIMAL_PRECISION
+                            try:
+                                e_x = to_decimal(s) / n
+                                e_x *= e_x
+                                e_x2 = to_decimal(ss) / n
+                                e_diff = e_x2 - e_x
+                                if abs(e_diff) < decimal.Decimal('0.00000001'):
+                                    e_diff = decimal.Decimal(0)
 
-                        values[self.key] = serialize_numeric_value(std.sqrt())
-                    except decimal.InvalidOperation:
-                        warnings.warn(exceptions.InvalidValueWarning("Failed to compute standard deviation, setting to zero (stream %d)." % self.stream.pk))
-                        values[self.key] = 0
+                                values[self.key] = serialize_numeric_value(e_diff.sqrt(), use_decimal=True)
+                            except decimal.InvalidOperation:
+                                raise ValueError
+                    else:
+                        e_x = float(s) / n
+                        e_x *= e_x
+                        e_x2 = float(ss) / n
+                        e_diff = e_x2 - e_x
+                        if abs(e_diff) < 10e-7:
+                            e_diff = 0
+
+                        values[self.key] = serialize_numeric_value(math.sqrt(e_diff))
+                except ValueError:
+                    warnings.warn(exceptions.InvalidValueWarning("Failed to compute standard deviation, setting to zero (stream %d)." % self.stream.pk))
+                    values[self.key] = 0
 
 
 class TimeDownsamplers(DownsamplersBase):
@@ -610,7 +670,14 @@ class DerivationOperators(object):
             if isinstance(value, dict):
                 # TODO: This is probably not right, currently only the mean is taken into account
                 try:
-                    value = to_decimal(deserialize_numeric_value(value[api.VALUE_DOWNSAMPLERS['sum']])) / value[api.VALUE_DOWNSAMPLERS['count']]
+                    count = src_stream.deserialize_numeric_value(value[api.VALUE_DOWNSAMPLERS['count']])
+                    value = src_stream.deserialize_numeric_value(value[api.VALUE_DOWNSAMPLERS['sum']])
+
+                    if src_stream.value_type_options.get('high_accuracy', False):
+                        value = to_decimal(value) / count
+                    else:
+                        value = float(value) / count
+
                     timestamp = timestamp[api.TIME_DOWNSAMPLERS['last']]
                 except KeyError:
                     pass
@@ -618,7 +685,7 @@ class DerivationOperators(object):
             # First ensure that we have a numeric value, as we can't do anything with other values
             if value is not None:
                 try:
-                    value = deserialize_numeric_value(value)
+                    value = src_stream.deserialize_numeric_value(value)
                 except TypeError:
                     warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'sum' operator." % repr(value)))
                     return
@@ -629,7 +696,7 @@ class DerivationOperators(object):
             # (in addition ME can't handle queries with field names that look like numbers)
             db = mongoengine.connection.get_db(DATABASE_ALIAS)
             db.streams.update({'_id': self._stream.id}, {
-                '$set': {('derive_state.%s.%s' % (ts_key, src_stream.id)): serialize_numeric_value(value)}
+                '$set': {('derive_state.%s.%s' % (ts_key, src_stream.id)): self._stream.serialize_numeric_value(value)}
             }, w=1)
             self._stream.reload()
 
@@ -642,7 +709,7 @@ class DerivationOperators(object):
                 # Note that this append may be called multiple times with the same timestamp when
                 # multiple threads are calling update
                 try:
-                    values = [deserialize_numeric_value(x) for x in self._stream.derive_state[ts_key].values() if x is not None]
+                    values = [self._stream.deserialize_numeric_value(x) for x in self._stream.derive_state[ts_key].values() if x is not None]
                     s = sum(values) if values else None
                     self._backend._append(self._stream, s, rounded_ts)
                 except exceptions.InvalidTimestamp:
@@ -709,21 +776,25 @@ class DerivationOperators(object):
 
             # First ensure that we have a numeric value, as we can't do anything with other values
             try:
-                value = deserialize_numeric_value(value)
+                value = src_stream.deserialize_numeric_value(value)
             except TypeError:
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'derivative' operator." % repr(value)))
                 return
 
             if self._stream.derive_state is not None:
                 # We already have a previous value, compute derivative
-                delta = to_decimal(total_seconds(timestamp - self._stream.derive_state['t']))
+                delta = total_seconds(timestamp - self._stream.derive_state['t'])
+
                 if delta != 0:
-                    derivative = (value - deserialize_numeric_value(self._stream.derive_state['v'])) / delta
+                    if self._stream.value_type_options.get('high_accuracy', False):
+                        derivative = to_decimal(value - src_stream.deserialize_numeric_value(self._stream.derive_state['v'])) / to_decimal(delta)
+                    else:
+                        derivative = float(value - src_stream.deserialize_numeric_value(self._stream.derive_state['v'])) / delta
                     self._backend._append(self._stream, derivative, timestamp)
                 else:
                     warnings.warn(exceptions.InvalidValueWarning("Zero time-delta in derivative computation (stream %s)!" % src_stream.id))
 
-            self._stream.derive_state = {'v': serialize_numeric_value(value), 't': timestamp}
+            self._stream.derive_state = {'v': src_stream.serialize_numeric_value(value), 't': timestamp}
             self._stream.save()
 
     class CounterReset(_Base):
@@ -768,7 +839,7 @@ class DerivationOperators(object):
 
             # First ensure that we have a numeric value, as we can't do anything with other values
             try:
-                value = deserialize_numeric_value(value)
+                value = src_stream.deserialize_numeric_value(value)
             except TypeError:
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'counter_reset' operator." % repr(value)))
                 return
@@ -776,10 +847,10 @@ class DerivationOperators(object):
             if self._stream.derive_state is not None:
                 # We already have a previous value, check what value needs to be inserted
                 # TODO: Add a configurable maximum counter value so overflows can be detected
-                if deserialize_numeric_value(self._stream.derive_state['v']) > value:
+                if src_stream.deserialize_numeric_value(self._stream.derive_state['v']) > value:
                     self._backend._append(self._stream, 1, timestamp)
 
-            self._stream.derive_state = {'v': serialize_numeric_value(value), 't': timestamp}
+            self._stream.derive_state = {'v': src_stream.serialize_numeric_value(value), 't': timestamp}
             self._stream.save()
 
     class CounterDerivative(_Base):
@@ -844,7 +915,7 @@ class DerivationOperators(object):
                 return
 
             try:
-                value = deserialize_numeric_value(value)
+                value = src_stream.deserialize_numeric_value(value)
             except TypeError:
                 warnings.warn(exceptions.InvalidValueWarning("Unsupported non-numeric value '%s' for 'counter_derivative' operator." % repr(value)))
                 return
@@ -853,7 +924,7 @@ class DerivationOperators(object):
                 # A data value has just been added
                 if self._stream.derive_state is not None:
                     # We already have a previous value, compute derivative
-                    v1 = deserialize_numeric_value(self._stream.derive_state['v'])
+                    v1 = src_stream.deserialize_numeric_value(self._stream.derive_state['v'])
                     vdelta = value - v1
                     if v1 > value:
                         # Treat this as an overflow
@@ -865,14 +936,17 @@ class DerivationOperators(object):
                             vdelta = None
 
                     if vdelta is not None:
-                        tdelta = to_decimal(total_seconds(timestamp - self._stream.derive_state['t']))
+                        tdelta = total_seconds(timestamp - self._stream.derive_state['t'])
                         if tdelta != 0:
-                            derivative = vdelta / tdelta
+                            if self._stream.value_type_options.get('high_accuracy', False):
+                                derivative = vdelta / to_decimal(tdelta)
+                            else:
+                                derivative = float(vdelta) / tdelta
                             self._backend._append(self._stream, derivative, timestamp)
                         else:
                             warnings.warn(exceptions.InvalidValueWarning("Zero time-delta in derivative computation (stream %s)!" % src_stream.id))
 
-                self._stream.derive_state = {'v': serialize_numeric_value(value), 't': timestamp}
+                self._stream.derive_state = {'v': src_stream.serialize_numeric_value(value), 't': timestamp}
             elif name == "reset" and value == 1:
                 # A reset stream marker has just been added, reset state
                 self._stream.derive_state = None
@@ -945,8 +1019,9 @@ class Streams(api.Streams):
 
 
 class Datapoints(api.Datapoints):
-    def __init__(self, datastream, cursor=None, empty_time=False):
+    def __init__(self, datastream, stream, cursor=None, empty_time=False):
         self.datastream = datastream
+        self.stream = stream
         self.cursor = cursor
         self.empty_time = empty_time
 
@@ -965,16 +1040,16 @@ class Datapoints(api.Datapoints):
             return
 
         for datapoint in self.cursor:
-            yield self.datastream._format_datapoint(datapoint, self.empty_time)
+            yield self.datastream._format_datapoint(self.stream, datapoint, self.empty_time)
 
     def __getitem__(self, key):
         if self.cursor is None:
             raise IndexError
 
         if isinstance(key, slice):
-            return Datapoints(self.datastream, cursor=self.cursor.__getitem__(key), empty_time=self.empty_time)
+            return Datapoints(self.datastream, self.stream, cursor=self.cursor.__getitem__(key), empty_time=self.empty_time)
         elif isinstance(key, (int, long)):
-            return self.datastream._format_datapoint(self.cursor.__getitem__(key), self.empty_time)
+            return self.datastream._format_datapoint(self.stream, self.cursor.__getitem__(key), self.empty_time)
         else:
             raise TypeError
 
@@ -1037,6 +1112,7 @@ class Stream(mongoengine.Document):
     earliest_datapoint = mongoengine.DateTimeField()
     latest_datapoint = mongoengine.DateTimeField()
     value_type = mongoengine.StringField()
+    value_type_options = mongoengine.DynamicField()
     tags = mongoengine.DictField()
 
     # Maintenance operations lock
@@ -1048,6 +1124,18 @@ class Stream(mongoengine.Document):
         indexes=['tags', 'external_id'],
         allow_inheritance=False,
     )
+
+    def serialize_numeric_value(self, value):
+        return serialize_numeric_value(
+            value,
+            use_decimal=self.value_type_options.get('high_accuracy', False),
+        )
+
+    def deserialize_numeric_value(self, value):
+        return deserialize_numeric_value(
+            value,
+            use_decimal=self.value_type_options.get('high_accuracy', False),
+        )
 
 
 class Backend(object):
@@ -1157,7 +1245,7 @@ class Backend(object):
         # Setup the database connection to MongoDB.
         mongoengine.connect(database_name, DATABASE_ALIAS, **self.connection_settings)
 
-    def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity, derive_from, derive_op, derive_args, value_type):
+    def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity, derive_from, derive_op, derive_args, value_type, value_type_options):
         """
         Ensures that a specified stream exists.
 
@@ -1171,6 +1259,7 @@ class Backend(object):
         :param derive_op: Derivation operation
         :param derive_args: Derivation operation arguments
         :param value_type: Optional value type (defaults to `numeric`)
+        :param value_type_options: Options specific to the value type
         :return: A stream identifier
         """
 
@@ -1187,6 +1276,11 @@ class Backend(object):
             if value_type != stream.value_type:
                 raise exceptions.InconsistentStreamConfiguration(
                     "You cannot change a stream's value type"
+                )
+
+            if value_type_options != stream.value_type_options:
+                raise exceptions.InconsistentStreamConfiguration(
+                    "You cannot change a stream's value type options"
                 )
 
             # If a stream already exists and the derive inputs and/or operator have changed,
@@ -1250,6 +1344,8 @@ class Backend(object):
             stream.value_downsamplers = list(value_downsamplers)
             stream.highest_granularity = highest_granularity
             stream.value_type = value_type
+            # TODO: Should we perform per-type options validation?
+            stream.value_type_options = value_type_options
             stream.tags = query_tags.copy()
             stream.tags.update(tags)
 
@@ -1409,6 +1505,7 @@ class Backend(object):
                 for g in api.Granularity.values[api.Granularity.values.index(stream.highest_granularity) + 1:]
             ]),
             'value_type': stream.value_type,
+            'value_type_options': stream.value_type_options,
         })
 
         if stream.derived_from:
@@ -1593,7 +1690,7 @@ class Backend(object):
             # If the value is too big to store into MongoDB as an integer and is not already a float,
             # convert it to string and write a string into the database
             if isinstance(value, numbers.Number):
-                value = serialize_numeric_value(value)
+                value = stream.serialize_numeric_value(value)
             elif isinstance(value, dict):
                 # Assume that we are inserting a downsampled datapoint. Users can use this when the source
                 # of their values already provides information from multiple samples. For example, pinging
@@ -1606,7 +1703,7 @@ class Backend(object):
                     if key not in value:
                         raise ValueError("Missing datapoint value for downsampler '%s'!" % ds_name)
                     else:
-                        value[key] = serialize_numeric_value(value[key])
+                        value[key] = stream.serialize_numeric_value(value[key])
 
                 for key in value:
                     if key not in valid_keys:
@@ -1717,7 +1814,7 @@ class Backend(object):
         ret = {
             'stream_id': str(stream.external_id),
             'granularity': stream.highest_granularity,
-            'datapoint': self._format_datapoint(datapoint),
+            'datapoint': self._format_datapoint(stream, datapoint),
         }
 
         # Call test callback after everything
@@ -1749,10 +1846,11 @@ class Backend(object):
 
         return self._append(stream, value, timestamp, check_timestamp)
 
-    def _format_datapoint(self, datapoint, empty_time=False):
+    def _format_datapoint(self, stream, datapoint, empty_time=False):
         """
         Formats a datapoint so it is suitable for user output.
 
+        :param stream: Stream descriptor
         :param datapoint: Raw datapoint from MongoDB database
         :param empty_time: Should there be not time value in the output? (default: false)
         :return: A properly formatted datapoint
@@ -1769,12 +1867,12 @@ class Backend(object):
             if isinstance(result['v'], dict):
                 for k, v in result['v'].iteritems():
                     try:
-                        result['v'][k] = deserialize_numeric_value(v)
+                        result['v'][k] = stream.deserialize_numeric_value(v)
                     except TypeError:
                         pass
             else:
                 try:
-                    result['v'] = deserialize_numeric_value(result['v'])
+                    result['v'] = stream.deserialize_numeric_value(result['v'])
                 except TypeError:
                     pass
 
@@ -1859,12 +1957,12 @@ class Backend(object):
             try:
                 start_timestamp = granularity.round_timestamp(start_exclusive) + ONE_SECOND_TIMEDELTA
             except OverflowError:
-                return Datapoints(self)
+                return Datapoints(self, stream)
         else:
             start_timestamp = granularity.round_timestamp(start)
 
         if start_timestamp > self._max_timestamp:
-            return Datapoints(self)
+            return Datapoints(self, stream)
 
         start_timestamp = self._force_timestamp_range(start_timestamp)
 
@@ -1892,13 +1990,13 @@ class Backend(object):
 
             if not overflow:
                 if end_timestamp <= self._min_timestamp:
-                    return Datapoints(self)
+                    return Datapoints(self, stream)
 
                 end_timestamp = self._force_timestamp_range(end_timestamp)
 
                 # Optimization
                 if end_timestamp <= start_timestamp:
-                    return Datapoints(self)
+                    return Datapoints(self, stream)
 
                 time_query.update({
                     '$lt': objectid.ObjectId.from_datetime(end_timestamp),
@@ -1909,7 +2007,7 @@ class Backend(object):
             '_id': time_query,
         }, downsamplers).sort('_id', -1 if reverse else 1)
 
-        return Datapoints(self, datapoints, empty_time)
+        return Datapoints(self, stream, datapoints, empty_time)
 
     def delete_streams(self, query_tags=None):
         """
@@ -2183,7 +2281,7 @@ class Backend(object):
                 new_datapoints.append({
                     'stream_id': str(stream.external_id),
                     'granularity': granularity,
-                    'datapoint': self._format_datapoint(datapoint),
+                    'datapoint': self._format_datapoint(stream, datapoint),
                 })
 
             return locked_until

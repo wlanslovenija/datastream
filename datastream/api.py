@@ -155,6 +155,7 @@ class Stream(object):
             self.earliest_datapoint = all_tags['earliest_datapoint']
             self.downsampled_until = all_tags['downsampled_until']
             self.value_type = all_tags['value_type']
+            self.value_type_options = all_tags['value_type_options']
 
             if 'derived_from' in all_tags:
                 self.derived_from = all_tags['derived_from']
@@ -172,6 +173,7 @@ class Stream(object):
             del self.tags['earliest_datapoint']
             del self.tags['downsampled_until']
             del self.tags['value_type']
+            del self.tags['value_type_options']
         except KeyError, exception:
             raise ValueError("Supplied tags are missing %s." % exception)
 
@@ -187,6 +189,7 @@ RESERVED_TAGS = (
     'earliest_datapoint',
     'downsampled_until',
     'value_type',
+    'value_type_options',
 )
 
 VALUE_DOWNSAMPLERS = {
@@ -297,7 +300,7 @@ class Datastream(object):
 
         self._check_query_tags(tags)
 
-    def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity, derive_from=None, derive_op=None, derive_args=None, value_type=None):
+    def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity, derive_from=None, derive_op=None, derive_args=None, value_type=None, value_type_options=None):
         """
         Ensures that a specified stream exists.
 
@@ -311,6 +314,7 @@ class Datastream(object):
         :param derive_op: Derivation operation
         :param derive_args: Derivation operation arguments
         :param value_type: Optional value type (defaults to `numeric`)
+        :param value_type_options: Options specific to the value type
         :return: A stream identifier
         """
 
@@ -338,8 +342,15 @@ class Datastream(object):
             value_type = 'numeric'
         if value_type not in VALUE_TYPES:
             raise exceptions.UnsupportedValueType("Unsupported value type: %s" % value_type)
+        if value_type_options is None:
+            if value_type == 'numeric':
+                value_type_options = {'high_accuracy': False}
+            else:
+                value_type_options = {}
+        elif not isinstance(value_type_options, dict):
+            raise TypeError("Value type options must be a dictionary")
 
-        return self.backend.ensure_stream(query_tags, tags, value_downsamplers, highest_granularity, derive_from, derive_op, derive_args, value_type)
+        return self.backend.ensure_stream(query_tags, tags, value_downsamplers, highest_granularity, derive_from, derive_op, derive_args, value_type, value_type_options)
 
     def get_tags(self, stream_id):
         """
