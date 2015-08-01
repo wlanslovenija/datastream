@@ -1201,7 +1201,7 @@ class Backend(object):
                         primaryKey=son.SON([('m', 1), ('_id', 1)]),
                         compression='lzma',
                     )
-                except pymongo.errors.CollectionInvalid:
+                except (pymongo.errors.CollectionInvalid, pymongo.errors.OperationFailure):
                     # Collection already exists.
                     pass
             else:
