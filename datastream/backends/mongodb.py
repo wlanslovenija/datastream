@@ -648,8 +648,12 @@ class DerivationOperators(object):
             :return: Database representation of the parameters
             """
 
-            # Ensure that source stream granularity matches our highest granularity
             for stream_dsc in src_streams:
+                # Ensure that the input streams are of correct type.
+                if stream_dsc['stream'].value_type != 'numeric':
+                    raise exceptions.IncompatibleTypes("All streams for 'sum' must be of 'numeric' type!")
+
+                # Ensure that source stream granularity matches our highest granularity.
                 granularity = stream_dsc.get('granularity', stream_dsc['stream'].highest_granularity)
                 if granularity != dst_stream.highest_granularity:
                     raise exceptions.IncompatibleGranularities
@@ -749,6 +753,9 @@ class DerivationOperators(object):
             if len(src_streams) > 1:
                 raise exceptions.InvalidOperatorArguments
 
+            if src_streams[0]['stream'].value_type != 'numeric':
+                raise exceptions.IncompatibleTypes("The data stream for 'derivative' must be of 'numeric' type!")
+
             # The highest granularity of the source stream must match ours
             stream_dsc = src_streams[0]
             granularity = stream_dsc.get('granularity', stream_dsc['stream'].highest_granularity)
@@ -818,9 +825,12 @@ class DerivationOperators(object):
             :return: Database representation of the parameters
             """
 
-            # The counter reset operator supports only one source stream
+            # The counter reset operator supports only one source stream.
             if len(src_streams) > 1:
                 raise exceptions.InvalidOperatorArguments
+
+            if src_streams[0]['stream'].value_type != 'numeric':
+                raise exceptions.IncompatibleTypes("The data stream for 'counter_reset' must be of 'numeric' type!")
 
             return super(DerivationOperators.CounterReset, cls).get_parameters(src_streams, dst_stream, **arguments)
 
@@ -888,11 +898,14 @@ class DerivationOperators(object):
                 raise exceptions.InvalidOperatorArguments("'counter_derivative' requires exactly two input streams!")
 
             # The reset stream must be first and named "reset", the data stream must be second
-            if src_streams[0].get('name', None) != "reset":
+            if src_streams[0].get('name', None) != 'reset':
                 raise exceptions.InvalidOperatorArguments("'counter_derivative' requires 'reset' to be the first input stream!")
 
             if src_streams[1].get('name', None) is not None:
                 raise exceptions.InvalidOperatorArguments("'counter_derivative' requires an unnamed data stream!")
+
+            if src_streams[1]['stream'].value_type != 'numeric':
+                raise exceptions.IncompatibleTypes("The unnamed data stream for 'counter_derivative' must be of 'numeric' type!")
 
             return super(DerivationOperators.CounterDerivative, cls).get_parameters(src_streams, dst_stream, **arguments)
 
@@ -947,8 +960,8 @@ class DerivationOperators(object):
                             warnings.warn(exceptions.InvalidValueWarning("Zero time-delta in derivative computation (stream %s)!" % src_stream.id))
 
                 self._stream.derive_state = {'v': src_stream.serialize_numeric_value(value), 't': timestamp}
-            elif name == "reset" and value == 1:
-                # A reset stream marker has just been added, reset state
+            elif name == "reset" and value:
+                # Value may be any value which evaluates to true. This signals that state should be reset.
                 self._stream.derive_state = None
 
             self._stream.save()
@@ -1368,10 +1381,6 @@ class Backend(object):
 
                     try:
                         src_stream = Stream.objects.get(external_id=uuid.UUID(stream_dsc['stream']))
-
-                        # One can't derive from streams with incompatible types
-                        if src_stream.value_type != stream.value_type:
-                            raise exceptions.IncompatibleTypes
 
                         # One can't specify a granularity higher than the stream's highest one
                         if stream_dsc.get('granularity', src_stream.highest_granularity) > src_stream.highest_granularity:
