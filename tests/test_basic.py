@@ -176,7 +176,10 @@ class BasicTest(MongoDBBasicTest):
             stream_id,
             datastream.Granularity.Seconds,
             datetime.datetime.utcfromtimestamp(0),
-            now + offset,
+            # We increase the tested boundary by an additional second as the test may sometimes
+            # fail when it started near the end of a second and the datapoint would then be
+            # appended in the next second.
+            now + offset + datetime.timedelta(seconds=1),
         )
         self.assertEqual(len(data), 2)
         data = list(data)
