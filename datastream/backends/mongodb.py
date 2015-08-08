@@ -810,7 +810,7 @@ class DerivationOperators(object):
         """
 
         name = 'counter_reset'
-        supports_types = ('numeric',)
+        supports_types = ('nominal',)
 
         @classmethod
         def get_parameters(cls, src_streams, dst_stream, **arguments):

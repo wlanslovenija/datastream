@@ -587,8 +587,9 @@ class BasicTest(MongoDBBasicTest):
         reset_stream_id = self.datastream.ensure_stream(
             {'name': 'reset'},
             {},
-            self.value_downsamplers,
+            ['count'],
             datastream.Granularity.Seconds,
+            value_type='nominal',
             derive_from=streamA_id,
             derive_op='counter_reset',
         )
@@ -608,7 +609,9 @@ class BasicTest(MongoDBBasicTest):
         reset_stream_id = self.datastream.ensure_stream(
             {'name': 'rsup'},
             {},
-            self.value_downsamplers, datastream.Granularity.Seconds,
+            ['count'],
+            datastream.Granularity.Seconds,
+            value_type='nominal',
             derive_from=uptime_stream_id,
             derive_op='counter_reset',
         )
@@ -643,8 +646,9 @@ class BasicTest(MongoDBBasicTest):
         reset_stream_id = self.datastream.ensure_stream(
             {'name': 'rsup2'},
             {},
-            self.value_downsamplers,
+            ['count'],
             datastream.Granularity.Seconds,
+            value_type='nominal',
             derive_from=uptime_stream_id,
             derive_op='counter_reset',
         )
@@ -851,8 +855,9 @@ class BasicTest(MongoDBBasicTest):
         reset_stream_id = self.datastream.ensure_stream(
             {'name': 'null_reset'},
             {},
-            self.value_downsamplers,
+            ['count'],
             datastream.Granularity.Seconds,
+            value_type='nominal',
             derive_from=stream_id,
             derive_op='counter_reset',
         )
