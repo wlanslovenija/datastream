@@ -2097,7 +2097,7 @@ class Backend(object):
                     collection = getattr(db.datapoints, granularity.name)
                     collection.remove({'m': stream.id})
 
-    def downsample_streams(self, query_tags=None, until=None, return_datapoints=False):
+    def downsample_streams(self, query_tags=None, until=None, return_datapoints=False, filter_stream=None):
         """
         Requests the backend to downsample all streams matching the specified
         query tags. Once a time range has been downsampled, new datapoints
@@ -2109,6 +2109,7 @@ class Backend(object):
         :param return_datapoints: Should newly downsampled datapoints be returned, this can
                                   potentially create a huge temporary list and memory consumption
                                   when downsampling many streams and datapoints
+        :param filter_stream: An optional callable which returns false for streams that should be skipped
         :return: A list of dictionaries containing `stream_id`, `granularity`, and `datapoint`
                  for each datapoint created while downsampling, if `return_datapoints` was set
         """
@@ -2120,6 +2121,9 @@ class Backend(object):
         new_datapoints = []
 
         for stream in self._get_stream_queryset(query_tags).filter(value_downsamplers__not__size=0):
+            if callable(filter_stream) and not filter_stream(stream):
+                continue
+
             result = self._downsample_check(stream, until, return_datapoints)
             if return_datapoints:
                 new_datapoints += result
