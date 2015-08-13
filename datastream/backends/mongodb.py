@@ -588,6 +588,16 @@ class DerivationOperators(object):
 
             self._backend = backend
             self._stream = dst_stream
+            self._appended = False
+
+        def _append(self, *args, **kwargs):
+            """
+            A wrapper around the backend's _append which also updates the local
+            appended status.
+            """
+
+            self._appended = True
+            self._backend._append(*args, **kwargs)
 
         @classmethod
         def get_parameters(cls, src_streams, dst_stream, **arguments):
@@ -615,6 +625,20 @@ class DerivationOperators(object):
             """
 
             raise NotImplementedError
+
+        def update_last_timestamp(self, timestamp):
+            """
+            Updates the last timestamp even if the derivation operator did not insert
+            any new datapoints.
+
+            :param timestamp: Timestamp of the last processed datapoint
+            """
+
+            try:
+                self._backend._update_last_timestamp(self._stream, timestamp, True)
+            except exceptions.InvalidTimestamp:
+                # This might happen in case of concurrent inserts.
+                pass
 
     @classmethod
     def get(cls, operator):
@@ -715,7 +739,7 @@ class DerivationOperators(object):
                 try:
                     values = [self._stream.deserialize_numeric_value(x) for x in self._stream.derive_state[ts_key].values() if x is not None]
                     s = sum(values) if values else None
-                    self._backend._append(self._stream, s, rounded_ts)
+                    self._append(self._stream, s, rounded_ts)
                 except exceptions.InvalidTimestamp:
                     pass
 
@@ -727,6 +751,19 @@ class DerivationOperators(object):
                         unset['derive_state.%s' % key] = ''
 
                 db.streams.update({'_id': self._stream.id}, {'$unset': unset}, w=1)
+
+        def update_last_timestamp(self, timestamp):
+            """
+            Updates the last timestamp even if the derivation operator did not insert
+            any new datapoints.
+
+            :param timestamp: Timestamp of the last processed datapoint
+            """
+
+            # Do not update the last timestamp in case of the sum operator. Sum needs to collect
+            # multiple input datapoints before creating one output datapoint and if we update the
+            # timestamp too soon, actual datapoints will not be inserted.
+            pass
 
     class Derivative(_Base):
         """
@@ -776,7 +813,7 @@ class DerivationOperators(object):
 
             if value is None:
                 # In case a null value is passed, we carry it on to the derived stream
-                self._backend._append(self._stream, None, timestamp)
+                self._append(self._stream, None, timestamp)
                 self._stream.derive_state = None
                 self._stream.save()
                 return
@@ -797,7 +834,7 @@ class DerivationOperators(object):
                         derivative = to_decimal(value - src_stream.deserialize_numeric_value(self._stream.derive_state['v'])) / to_decimal(delta)
                     else:
                         derivative = float(value - src_stream.deserialize_numeric_value(self._stream.derive_state['v'])) / delta
-                    self._backend._append(self._stream, derivative, timestamp)
+                    self._append(self._stream, derivative, timestamp)
                 else:
                     warnings.warn(exceptions.InvalidValueWarning("Zero time-delta in derivative computation (stream %s)!" % src_stream.id))
 
@@ -858,7 +895,7 @@ class DerivationOperators(object):
                 # We already have a previous value, check what value needs to be inserted
                 # TODO: Add a configurable maximum counter value so overflows can be detected
                 if src_stream.deserialize_numeric_value(self._stream.derive_state['v']) > value:
-                    self._backend._append(self._stream, 1, timestamp)
+                    self._append(self._stream, 1, timestamp)
 
             self._stream.derive_state = {'v': src_stream.serialize_numeric_value(value), 't': timestamp}
             self._stream.save()
@@ -922,7 +959,7 @@ class DerivationOperators(object):
             # First ensure that we have a numeric value, as we can't do anything with other values
             if value is None:
                 # In case a null value is passed, we carry it on to the derived stream
-                self._backend._append(self._stream, None, timestamp)
+                self._append(self._stream, None, timestamp)
                 self._stream.derive_state = None
                 self._stream.save()
                 return
@@ -955,7 +992,7 @@ class DerivationOperators(object):
                                 derivative = vdelta / to_decimal(tdelta)
                             else:
                                 derivative = float(vdelta) / tdelta
-                            self._backend._append(self._stream, derivative, timestamp)
+                            self._append(self._stream, derivative, timestamp)
                         else:
                             warnings.warn(exceptions.InvalidValueWarning("Zero time-delta in derivative computation (stream %s)!" % src_stream.id))
 
@@ -1681,6 +1718,46 @@ class Backend(object):
 
             derive_operator = DerivationOperators.get(descriptor.op)(self, derived_stream, **descriptor.args)
             derive_operator.update(stream, timestamp, value, name=descriptor.name)
+            if not derive_operator._appended:
+                # The derivation operator did not update its stream. We still update the timestamp to
+                # properly handle downsampling.
+                derive_operator.update_last_timestamp(timestamp)
+
+    def _update_last_timestamp(self, stream, timestamp, check_timestamp):
+        object_id = self._generate_object_id(timestamp)
+
+        for i in xrange(10):
+            if check_timestamp:
+                if stream.latest_datapoint and object_id.generation_time < stream.latest_datapoint:
+                    raise exceptions.InvalidTimestamp("Datapoint timestamp must be equal or larger (newer) than the latest one '%s': %s" % (stream.latest_datapoint, object_id.generation_time))
+
+            # Update last datapoint metadata.
+            timestamp_check_time = datetime.datetime.now(pytz.utc)
+            mstream = Stream._get_collection().find_and_modify(
+                {'_id': stream.pk, 'latest_datapoint': stream.latest_datapoint},
+                {'$set': {'latest_datapoint': object_id.generation_time}},
+                fields={'_id': 1},
+            )
+            if not mstream:
+                stream.reload()
+                continue
+            else:
+                stream.latest_datapoint = object_id.generation_time
+                ld = LastDatapoint(
+                    stream_id=stream.pk,
+                    insertion_ts=timestamp_check_time,
+                    datapoint_ts=object_id.generation_time
+                )
+                ld.save()
+                break
+        else:
+            raise exceptions.StreamAppendContended
+
+        if stream.earliest_datapoint is None:
+            stream.earliest_datapoint = stream.latest_datapoint
+            stream.save()
+
+        return object_id, timestamp_check_time
 
     def _append(self, stream, value, timestamp=None, check_timestamp=True):
         """
@@ -1772,38 +1849,7 @@ class Backend(object):
         else:
             raise TypeError("Unsupported stream value type: %s" % stream.value_type)
 
-        object_id = self._generate_object_id(timestamp)
-
-        for i in xrange(10):
-            if check_timestamp:
-                if stream.latest_datapoint and object_id.generation_time < stream.latest_datapoint:
-                    raise exceptions.InvalidTimestamp("Datapoint timestamp must be equal or larger (newer) than the latest one '%s': %s" % (stream.latest_datapoint, object_id.generation_time))
-
-            # Update last datapoint metadata
-            timestamp_check_time = datetime.datetime.now(pytz.utc)
-            mstream = Stream._get_collection().find_and_modify(
-                {'_id': stream.pk, 'latest_datapoint': stream.latest_datapoint},
-                {'$set': {'latest_datapoint': object_id.generation_time}},
-                fields={'_id': 1},
-            )
-            if not mstream:
-                stream.reload()
-                continue
-            else:
-                stream.latest_datapoint = object_id.generation_time
-                ld = LastDatapoint(
-                    stream_id=stream.pk,
-                    insertion_ts=timestamp_check_time,
-                    datapoint_ts=object_id.generation_time
-                )
-                ld.save()
-                break
-        else:
-            raise exceptions.StreamAppendContended
-
-        if stream.earliest_datapoint is None:
-            stream.earliest_datapoint = stream.latest_datapoint
-            stream.save()
+        object_id, timestamp_check_time = self._update_last_timestamp(stream, timestamp, check_timestamp)
 
         if getattr(self._test_concurrency, 'sleep', False):
             time_module.sleep(DOWNSAMPLE_SAFETY_MARGIN // 2)

@@ -575,7 +575,7 @@ class BasicTest(MongoDBBasicTest):
         self.assertEqual(len(data), 0)
 
         with self.time_offset():
-            x = self.datastream.downsample_streams(until=ts + datetime.timedelta(hours=10))
+            self.datastream.downsample_streams(until=ts + datetime.timedelta(hours=10))
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts)
         data = list(data)
@@ -594,7 +594,7 @@ class BasicTest(MongoDBBasicTest):
             derive_op='counter_reset',
         )
 
-        for i, v in enumerate([10, 23, 28, 44, 2, 17, 90, 30, 2]):
+        for i, v in enumerate([10, 23, 28, 44, 2, 17, 90, 30, 2, 5, 10, 15, 23, 1, 7, 12, 19, 25, 31, 45, 51]):
             ts = datetime.datetime(2000, 1, 1, 12, 0, i, tzinfo=pytz.utc)
             self.datastream.append(streamA_id, v, ts)
 
@@ -602,7 +602,15 @@ class BasicTest(MongoDBBasicTest):
         data = self.datastream.get_data(reset_stream_id, self.datastream.Granularity.Seconds, start=ts)
         data = list(data)
         self._test_data_types(data)
-        self.assertEqual([x['v'] for x in data], [1, 1, 1])
+        self.assertEqual([x['v'] for x in data], [1, 1, 1, 1])
+
+        with self.time_offset():
+            self.datastream.downsample_streams(until=ts + datetime.timedelta(hours=10))
+
+        data = self.datastream.get_data(reset_stream_id, self.datastream.Granularity.Seconds10, start=ts)
+        data = list(data)
+        self._test_data_types(data)
+        self.assertEqual([x['v']['c'] for x in data], [3, 1])
 
         # Test counter derivative operator
         uptime_stream_id = self.datastream.ensure_stream({'name': 'up'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
