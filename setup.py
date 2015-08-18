@@ -4,7 +4,7 @@ import os
 
 from setuptools import setup, find_packages
 
-VERSION = '0.4.4'
+VERSION = '0.4.8'
 
 if __name__ == '__main__':
     setup(
@@ -29,12 +29,12 @@ if __name__ == '__main__':
         zip_safe=False,
         install_requires=[
             'mongoengine>=0.8.1',
-            'pymongo>=2.2.1',
+            'pymongo>=2.7.1',
             'pytz>=2012h',
         ],
         tests_require=[
             'mongoengine>=0.8.1',
-            'pymongo>=2.2.1',
+            'pymongo>=2.7.1',
             'pytz>=2012h',
         ],
         test_suite='tests',
