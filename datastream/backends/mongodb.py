@@ -1022,6 +1022,9 @@ class Datapoints(api.Datapoints):
     def __init__(self, datastream, stream, cursor=None, empty_time=False):
         self.datastream = datastream
         self.stream = stream
+        # Cursor might be None when we are optimizing a query and know in advance that there will be no datapoints.
+        # Then we return Datapoints object with cursor set to None. Behavior of such object should be the same
+        # as if we would do a query which would be returning no values.
         self.cursor = cursor
         self.empty_time = empty_time
 
@@ -1043,13 +1046,20 @@ class Datapoints(api.Datapoints):
             yield self.datastream._format_datapoint(self.stream, datapoint, self.empty_time)
 
     def __getitem__(self, key):
-        if self.cursor is None:
-            raise IndexError
-
         if isinstance(key, slice):
-            return Datapoints(self.datastream, self.stream, cursor=self.cursor.__getitem__(key), empty_time=self.empty_time)
+            if self.cursor is None:
+                # We just make a copy of the object, but do not raise an exception. This is to behave the same as
+                # cursor would behave. Even if there are no values returned by the query, it does not raise an exception
+                # when doing a slice. It raises an exception only when you are accessing the concrete index of the cursor.
+                return Datapoints(self.datastream, self.stream, cursor=None, empty_time=self.empty_time)
+            else:
+                return Datapoints(self.datastream, self.stream, cursor=self.cursor.__getitem__(key), empty_time=self.empty_time)
         elif isinstance(key, (int, long)):
-            return self.datastream._format_datapoint(self.stream, self.cursor.__getitem__(key), self.empty_time)
+            if self.cursor is None:
+                # Doing a concrete index access, there are no values, so raise an exception.
+                raise IndexError
+            else:
+                return self.datastream._format_datapoint(self.stream, self.cursor.__getitem__(key), self.empty_time)
         else:
             raise TypeError
 
