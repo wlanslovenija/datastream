@@ -2090,22 +2090,33 @@ class Backend(object):
                 collection.drop()
             db.streams.drop()
         else:
-            for stream in self._get_stream_queryset(query_tags):
-                if stream.contributes_to:
+            have_streams = True
+            while have_streams:
+                have_streams = False
+                any_removed = False
+
+                for stream in self._get_stream_queryset(query_tags):
+                    have_streams = True
+                    if stream.contributes_to:
+                        continue
+
+                    any_removed = True
+
+                    if stream.derived_from:
+                        # Remove dependencies from all source streams
+                        Stream.objects.filter(id__in=stream.derived_from.stream_ids).update(
+                            **{('unset__contributes_to__%s' % stream.id): ''}
+                        )
+
+                    stream.delete()
+                    for granularity in api.Granularity.values:
+                        collection = getattr(db.datapoints, granularity.name)
+                        collection.remove({'m': stream.id})
+
+                if have_streams and not any_removed:
                     raise exceptions.OutstandingDependenciesError(
                         "Unable to remove stream as derived streams depend on it"
                     )
-
-                if stream.derived_from:
-                    # Remove dependencies from all source streams
-                    Stream.objects.filter(id__in=stream.derived_from.stream_ids).update(
-                        **{('unset__contributes_to__%s' % stream.id): ''}
-                    )
-
-                stream.delete()
-                for granularity in api.Granularity.values:
-                    collection = getattr(db.datapoints, granularity.name)
-                    collection.remove({'m': stream.id})
 
     def downsample_streams(self, query_tags=None, until=None, return_datapoints=False, filter_stream=None):
         """

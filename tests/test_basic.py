@@ -698,10 +698,9 @@ class BasicTest(MongoDBBasicTest):
 
         self.datastream.delete_streams({'name': 'rate2'})
         self.datastream.delete_streams({'name': 'rsup2'})
-        self.datastream.delete_streams({'name': 'rate'})
-        self.datastream.delete_streams({'name': 'rsup'})
-        self.datastream.delete_streams({'name': 'data'})
-        self.datastream.delete_streams({'name': 'up'})
+
+        # Test multiple streams removal in correct order
+        self.datastream.delete_streams({})
 
     def test_null_values(self):
         stream_id = self.datastream.ensure_stream({'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
