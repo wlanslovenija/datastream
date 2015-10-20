@@ -4,7 +4,7 @@ import os
 
 from setuptools import setup, find_packages
 
-VERSION = '0.4.11'
+VERSION = '0.4.12'
 
 if __name__ == '__main__':
     setup(
