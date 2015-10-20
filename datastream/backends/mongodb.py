@@ -1515,7 +1515,13 @@ class Backend(object):
 
         stream_ids = []
         for stream_id in stream.derived_from.stream_ids:
-            sstream = Stream.objects.get(id=int(stream_id))
+            try:
+                sstream = Stream.objects.get(id=int(stream_id))
+            except Stream.DoesNotExist:
+                # Skip streams which do not exist. This may happen due to out of date descriptor,
+                # when the other stream has just been removed.
+                continue
+
             stream_ids.append(unicode(sstream.external_id))
 
         return {
@@ -1534,7 +1540,13 @@ class Backend(object):
 
         result = {}
         for stream_id, descriptor in stream.contributes_to.items():
-            stream = Stream.objects.get(id=int(stream_id))
+            try:
+                stream = Stream.objects.get(id=int(stream_id))
+            except Stream.DoesNotExist:
+                # Skip streams which do not exist. This may happen due to out of date descriptor,
+                # when the other stream has just been removed.
+                continue
+
             result[unicode(stream.external_id)] = {
                 'op': descriptor.op,
                 'args': descriptor.args,
