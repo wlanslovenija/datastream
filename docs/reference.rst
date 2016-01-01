@@ -16,6 +16,7 @@ API operations are implemented in backends, which are responsible for storing da
 performing downsampling, deriving streams, and executing queries.
 
 .. autoclass:: datastream.backends.mongodb.Backend
+.. autoclass:: datastream.backends.influxdb.Backend
 
 Implementation Details
 ......................

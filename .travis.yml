@@ -1,3 +1,4 @@
+sudo: required
 language: python
 python:
  - 2.7
@@ -6,13 +7,22 @@ env:
  - PYMONGO_VERSION="==2.7.1" MONGOENGINE_VERSION=">=0.8.1"
  - PYMONGO_VERSION=">=2.7.1,<3.0.0" MONGOENGINE_VERSION="==0.8.1"
  - PYMONGO_VERSION=">=2.7.1,<3.0.0" MONGOENGINE_VERSION=">=0.8.1"
-services: mongodb
+services:
+ - docker
+ - postgresql
+addons:
+  postgresql: "9.4"
+before_install:
+ - docker run -d -p 27017:27017 -v /var/lib/tokumx --privileged=true wlanslovenija/tokumx
+ - docker run -d -p 8086:8086 -v /data tutum/influxdb
 install:
  - pip install "mongoengine$MONGOENGINE_VERSION"
  - pip install "pymongo$PYMONGO_VERSION"
  - pip install pep8
  - pip install pylint
  - python setup.py install
+ - psql -U postgres -c "CREATE ROLE test WITH SUPERUSER LOGIN PASSWORD 'test'"
+ - psql -U postgres -c "CREATE DATABASE test_database WITH OWNER test ENCODING 'UNICODE'"
 before_script:
  - pep8 datastream tests docs
  - pylint datastream tests || true
