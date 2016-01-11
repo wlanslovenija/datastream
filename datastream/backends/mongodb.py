@@ -751,6 +751,11 @@ class DerivationOperators(object):
                         unset['derive_state.%s' % key] = ''
 
                 db.streams.update({'_id': self._stream.id}, {'$unset': unset}, w=1)
+            elif len(self._stream.derive_state) > 50:
+                # Prevent stream metadata from filling up by removing the oldest bucket.
+                buckets = self._stream.derive_state.keys()
+                buckets.sort()
+                db.streams.update({'_id': self._stream.id}, {'$unset': {('derive_state.%s' % buckets[0]): ''}}, w=1)
 
         def update_last_timestamp(self, timestamp):
             """
@@ -1199,6 +1204,14 @@ class Stream(mongoengine.Document):
 
 
 class Backend(object):
+    """
+    MongoDB backend.
+    """
+
+    requires_downsampling = True
+    requires_derived_stream_backprocess = False
+    downsampled_always_exist = False
+    downsampled_timestamps_start_bucket = False
     value_downsamplers = set([downsampler.name for downsampler in ValueDownsamplers.values])
     time_downsamplers = set([downsampler.name for downsampler in TimeDownsamplers.values])
 
@@ -1900,6 +1913,23 @@ class Backend(object):
 
         return ret
 
+    def append_multiple(self, datapoints):
+        """
+        Appends multiple datapoints into the datastream. Each datapoint should be
+        described by a dictionary with fields `stream_id`, `value` and `timestamp`,
+        which are the same as in `append`.
+
+        :param datapoints: A list of datapoints to append
+        """
+
+        # Simulate multiple append.
+        for datapoint in datapoints:
+            timestamp = datapoint.get('timestamp', None)
+            if timestamp is not None and timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=pytz.utc)
+
+            self.append(datapoint['stream_id'], datapoint['value'], timestamp)
+
     def append(self, stream_id, value, timestamp=None, check_timestamp=True):
         """
         Appends a datapoint into the datastream.
@@ -2153,7 +2183,9 @@ class Backend(object):
 
         new_datapoints = []
 
-        for stream in self._get_stream_queryset(query_tags).filter(value_downsamplers__not__size=0):
+        streams = self._get_stream_queryset(query_tags).filter(value_downsamplers__not__size=0)
+        streams = streams.filter(latest_datapoint__ne=None)
+        for stream in streams:
             if callable(filter_stream) and not filter_stream(stream):
                 continue
 

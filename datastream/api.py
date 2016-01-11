@@ -153,9 +153,12 @@ class Stream(object):
             self.pending_backprocess = bool(all_tags['pending_backprocess'])
             self.latest_datapoint = all_tags['latest_datapoint']
             self.earliest_datapoint = all_tags['earliest_datapoint']
-            self.downsampled_until = all_tags['downsampled_until']
             self.value_type = all_tags['value_type']
             self.value_type_options = all_tags['value_type_options']
+
+            if 'downsampled_until' in all_tags:
+                self.downsampled_until = all_tags['downsampled_until']
+                del self.tags['downsampled_until']
 
             if 'derived_from' in all_tags:
                 self.derived_from = all_tags['derived_from']
@@ -171,7 +174,6 @@ class Stream(object):
             del self.tags['pending_backprocess']
             del self.tags['latest_datapoint']
             del self.tags['earliest_datapoint']
-            del self.tags['downsampled_until']
             del self.tags['value_type']
             del self.tags['value_type_options']
         except KeyError, exception:
@@ -233,6 +235,9 @@ VALUE_TYPES = (
 
 
 class ResultsBase(object):
+    def __init__(self, *args, **kwargs):
+        pass
+
     def batch_size(self, batch_size): # pylint: disable=unused-argument
         # Ignore by default, this is just for optimization
         return
@@ -409,6 +414,17 @@ class Datastream(object):
         self._check_query_tags(query_tags or {})
 
         return self.backend.find_streams(query_tags)
+
+    def append_multiple(self, datapoints):
+        """
+        Appends multiple datapoints into the datastream. Each datapoint should be
+        described by a dictionary with fields `stream_id`, `value` and `timestamp`,
+        which are the same as in `append`.
+
+        :param datapoints: A list of datapoints to append
+        """
+
+        return self.backend.append_multiple(datapoints)
 
     def append(self, stream_id, value, timestamp=None, check_timestamp=True):
         """

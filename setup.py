@@ -4,7 +4,7 @@ import os
 
 from setuptools import setup, find_packages
 
-VERSION = '0.4.12'
+VERSION = '0.5.0'
 
 if __name__ == '__main__':
     setup(
@@ -31,11 +31,17 @@ if __name__ == '__main__':
             'mongoengine>=0.8.1',
             'pymongo>=2.7.1,<3.0.0',
             'pytz>=2012h',
+            'python-dateutil>=2.4.2',
+            'psycopg2>=2.6.1',
+            'influxdb>=2.10.0',
         ],
         tests_require=[
             'mongoengine>=0.8.1',
             'pymongo>=2.7.1,<3.0.0',
             'pytz>=2012h',
+            'python-dateutil>=2.4.2',
+            'psycopg2>=2.6.1',
+            'influxdb>=2.10.0',
         ],
         test_suite='tests',
     )

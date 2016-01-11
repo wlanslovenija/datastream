@@ -7,6 +7,13 @@ providing a powerful and unified API.
 It provides an easy way to insert time-series datapoints and automatically downsample them into multiple
 levels of granularity for efficient querying time-series data at various time scales.
 
+Currently supported backends are:
+
+* MongoDB (``datastream.backends.mongodb.Backend``), which uses MongoDB/TokuMX for data and metadata
+  storage.
+* InfluxDB (``datastream.backends.influxdb.Backend``), which uses InfluxDB for data storage and
+  PostgreSQL for metadata storage.
+
 .. _wlan slovenija: https://wlan-si.net
 
 Contents
