@@ -1318,7 +1318,7 @@ class Backend(object):
         # Setup the database connection to MongoDB.
         mongoengine.connect(database_name, DATABASE_ALIAS, **self.connection_settings)
 
-    def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity, derive_from, derive_op, derive_args, value_type, value_type_options):
+    def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity, derive_from, derive_op, derive_args, value_type, value_type_options, derive_backprocess):
         """
         Ensures that a specified stream exists.
 
@@ -1333,6 +1333,7 @@ class Backend(object):
         :param derive_args: Derivation operation arguments
         :param value_type: Optional value type (defaults to `numeric`)
         :param value_type_options: Options specific to the value type
+        :param derive_backprocess: Should a derived stream be backprocessed
         :return: A stream identifier
         """
 
@@ -1448,11 +1449,12 @@ class Backend(object):
 
                         # If any of the input streams already holds some data, we pause our stream; there
                         # is a potential race condition here, but this should not result in great loss
-                        try:
-                            self.get_data(unicode(src_stream.external_id), src_stream.highest_granularity, self._min_timestamp)[0]
-                            stream.pending_backprocess = True
-                        except IndexError:
-                            pass
+                        if derive_backprocess:
+                            try:
+                                self.get_data(unicode(src_stream.external_id), src_stream.highest_granularity, self._min_timestamp)[0]
+                                stream.pending_backprocess = True
+                            except IndexError:
+                                pass
 
                         stream_dsc = stream_dsc.copy()
                         stream_dsc['stream'] = src_stream

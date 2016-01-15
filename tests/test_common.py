@@ -1323,6 +1323,42 @@ class CommonTestsMixin(object):
         stream = datastream.Stream(self.datastream.get_tags(stream_id))
         self.assertEqual(stream.pending_backprocess, False)
 
+        # Test disable of initial backprocessing.
+        reset_stream_id = self.datastream.ensure_stream(
+            {'name': 'rsup3'},
+            {},
+            ['count'],
+            datastream.Granularity.Seconds,
+            value_type='nominal',
+            derive_from=uptime_stream_id,
+            derive_op='counter_reset',
+            derive_backprocess=False,
+        )
+        stream_id = self.datastream.ensure_stream(
+            {'name': 'rate3'},
+            {},
+            self.value_downsamplers,
+            datastream.Granularity.Seconds,
+            derive_from=[
+                {'name': 'reset', 'stream': reset_stream_id},
+                {'stream': data_stream_id},
+            ],
+            derive_op='counter_derivative',
+            derive_args={'max_value': 256},
+            derive_backprocess=False,
+        )
+
+        stream = datastream.Stream(self.datastream.get_tags(stream_id))
+        self.assertEqual(stream.pending_backprocess, False)
+
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
+        self.assertEqual(len(data), 0)
+
+        self.datastream.backprocess_streams()
+
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
+        self.assertEqual(len(data), 0)
+
         # Test derived stream removal.
         with self.assertRaises(exceptions.OutstandingDependenciesError):
             self.datastream.delete_streams({'name': 'up'})

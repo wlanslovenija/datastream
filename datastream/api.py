@@ -305,7 +305,7 @@ class Datastream(object):
 
         self._check_query_tags(tags)
 
-    def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity, derive_from=None, derive_op=None, derive_args=None, value_type=None, value_type_options=None):
+    def ensure_stream(self, query_tags, tags, value_downsamplers, highest_granularity, derive_from=None, derive_op=None, derive_args=None, value_type=None, value_type_options=None, derive_backprocess=True):
         """
         Ensures that a specified stream exists.
 
@@ -320,6 +320,7 @@ class Datastream(object):
         :param derive_args: Derivation operation arguments
         :param value_type: Optional value type (defaults to `numeric`)
         :param value_type_options: Options specific to the value type
+        :param derive_backprocess: Should a derived stream be backprocessed
         :return: A stream identifier
         """
 
@@ -355,7 +356,7 @@ class Datastream(object):
         elif not isinstance(value_type_options, dict):
             raise TypeError("Value type options must be a dictionary")
 
-        return self.backend.ensure_stream(query_tags, tags, value_downsamplers, highest_granularity, derive_from, derive_op, derive_args, value_type, value_type_options)
+        return self.backend.ensure_stream(query_tags, tags, value_downsamplers, highest_granularity, derive_from, derive_op, derive_args, value_type, value_type_options, derive_backprocess)
 
     def get_tags(self, stream_id):
         """
