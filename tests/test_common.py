@@ -496,7 +496,7 @@ class CommonTestsMixin(object):
     def test_null_values(self):
         stream_id = self.datastream.ensure_stream({'name': 'foo'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
 
-        # Basic test with one stream
+        # Basic test with one stream.
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         self.datastream.append(stream_id, None, ts)
 
@@ -511,11 +511,19 @@ class CommonTestsMixin(object):
 
         ts = datetime.datetime(2000, 1, 1, 12, 2, 0, tzinfo=pytz.utc)
         self.datastream.append(stream_id, 2, ts)
+        end_ts = ts
 
+        # Test highest granularity.
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts, end=end_ts)
+        data = list(data)
+
+        self.assertEqual([x['v'] for x in data], [None, 10, None, None, 2])
+
+        # Test downsampled.
         with self.time_offset():
             self.datastream.downsample_streams()
 
-        end_ts = ts
         ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=ts, end=end_ts)
         data = list(data)
@@ -539,6 +547,166 @@ class CommonTestsMixin(object):
             self.assertEqual(data[1]['v']['q'], None) # sum of squares
         self.assertEqual(data[1]['v']['s'], None) # sum
         self.assertEqual(data[1]['v']['u'], None) # maximum
+
+        # Sum: two streams, only one has a null value for a datapoint
+        other_stream_id = self.datastream.ensure_stream({'name': 'bar1'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        self.datastream.append(other_stream_id, 1, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 1, tzinfo=pytz.utc)
+        self.datastream.append(other_stream_id, 1, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 1, 0, tzinfo=pytz.utc)
+        self.datastream.append(other_stream_id, 1, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 1, 1, tzinfo=pytz.utc)
+        self.datastream.append(other_stream_id, 1, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 2, 0, tzinfo=pytz.utc)
+        self.datastream.append(other_stream_id, 1, ts)
+
+        sum_stream_id = self.datastream.ensure_stream(
+            {'name': 'null_sum1'},
+            {},
+            self.value_downsamplers,
+            datastream.Granularity.Seconds,
+            derive_from=[stream_id, other_stream_id],
+            derive_op='sum',
+        )
+        self.datastream.backprocess_streams()
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        data = self.datastream.get_data(sum_stream_id, self.datastream.Granularity.Seconds, start=ts)
+        data = list(data)
+        self._test_data_types(data)
+
+        self.assertEqual([x['v'] for x in data], [1, 11, 1, 1, 3])
+
+        # Sum: two streams, both have null values for a datapoint
+        other_stream_id = self.datastream.ensure_stream({'name': 'bar2'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        self.datastream.append(other_stream_id, None, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 1, tzinfo=pytz.utc)
+        self.datastream.append(other_stream_id, None, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 1, 0, tzinfo=pytz.utc)
+        self.datastream.append(other_stream_id, None, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 1, 1, tzinfo=pytz.utc)
+        self.datastream.append(other_stream_id, None, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 2, 0, tzinfo=pytz.utc)
+        self.datastream.append(other_stream_id, None, ts)
+
+        sum_stream_id = self.datastream.ensure_stream(
+            {'name': 'null_sum2'},
+            {},
+            self.value_downsamplers,
+            datastream.Granularity.Seconds,
+            derive_from=[stream_id, other_stream_id],
+            derive_op='sum',
+        )
+        self.datastream.backprocess_streams()
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        data = self.datastream.get_data(sum_stream_id, self.datastream.Granularity.Seconds, start=ts)
+        data = list(data)
+        self._test_data_types(data)
+
+        self.assertEqual([x['v'] for x in data], [None, 10, None, None, 2])
+
+        # Derivative
+        derivative_stream_id = self.datastream.ensure_stream(
+            {'name': 'null_derivative'},
+            {},
+            self.value_downsamplers,
+            datastream.Granularity.Seconds,
+            derive_from=[stream_id],
+            derive_op='derivative',
+        )
+        self.datastream.backprocess_streams()
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        data = self.datastream.get_data(derivative_stream_id, self.datastream.Granularity.Seconds, start=ts)
+        data = list(data)
+        self._test_data_types(data)
+
+        self.assertEqual([x['v'] for x in data], [None, None, None])
+
+        # Counter derivative
+        reset_stream_id = self.datastream.ensure_stream({'name': 'reset'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
+        counter_derivative_stream_id = self.datastream.ensure_stream(
+            {'name': 'null_counter_derivative'},
+            {},
+            self.value_downsamplers,
+            datastream.Granularity.Seconds,
+            derive_from=[
+                {'name': 'reset', 'stream': reset_stream_id},
+                {'stream': stream_id},
+            ],
+            derive_op='counter_derivative',
+        )
+        self.datastream.backprocess_streams()
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        data = self.datastream.get_data(counter_derivative_stream_id, self.datastream.Granularity.Seconds, start=ts)
+        data = list(data)
+        self._test_data_types(data)
+
+        self.assertEqual([x['v'] for x in data], [None, None, None])
+
+        # Counter reset
+        reset_stream_id = self.datastream.ensure_stream(
+            {'name': 'null_reset'},
+            {},
+            ['count'],
+            datastream.Granularity.Seconds,
+            value_type='nominal',
+            derive_from=stream_id,
+            derive_op='counter_reset',
+        )
+
+        self.datastream.backprocess_streams()
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        data = self.datastream.get_data(reset_stream_id, self.datastream.Granularity.Seconds, start=ts)
+        data = list(data)
+        self._test_data_types(data)
+
+        self.assertEqual([x['v'] for x in data], [1])
+
+        # Test null value insertion on downsampling
+        stream_id = self.datastream.ensure_stream({'name': 'bar'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        self.datastream.append(stream_id, 10, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 10, 0, tzinfo=pytz.utc)
+        self.datastream.append(stream_id, 20, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 13, 45, tzinfo=pytz.utc)
+        with self.time_offset():
+            self.datastream.downsample_streams(until=ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 20, 0, tzinfo=pytz.utc)
+        self.datastream.append(stream_id, 30, ts)
+
+        ts = datetime.datetime(2000, 1, 1, 12, 21, 0, tzinfo=pytz.utc)
+        self.datastream.append(stream_id, 30, ts)
+        end_ts = ts
+
+        with self.time_offset():
+            self.datastream.downsample_streams()
+
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Minutes, start=ts, end_exclusive=end_ts)
+        data = list(data)
+        self._test_data_types(data)
+
+        self.assertEqual([x['v']['m'] for x in data], [10.] + [None] * 9 + [20.] + [None] * 9 + [30.])
 
     def test_find_streams(self):
         # Make sure we are starting with an empty database.

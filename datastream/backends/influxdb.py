@@ -562,8 +562,12 @@ class Datapoints(ResultSetIteratorMixin, api.Datapoints):
     def _format_datapoint(self, datapoint):
         result = {}
 
-        if 'value' in datapoint:
-            result['v'] = self._deserialize_value(datapoint['value'])
+        if 'value' in datapoint or 'value_null' in datapoint:
+            if datapoint.get('value_null', False):
+                result['v'] = None
+            else:
+                result['v'] = self._deserialize_value(datapoint['value'])
+
             result['t'] = dateutil.parser.parse(datapoint['time'])
             if result['t'].tzinfo is None:
                 result['t'] = result['t'].replace(tzinfo=pytz.utc)
@@ -1211,9 +1215,6 @@ class Backend(object):
         grouped_datapoints = {}
         now = datetime.datetime.now(pytz.utc)
         for datapoint in datapoints:
-            if datapoint['value'] is None:
-                continue
-
             stream = self._get_stream(datapoint['stream_id'])
             stream_ids.append(stream.uuid)
 
@@ -1222,11 +1223,14 @@ class Backend(object):
                 if stream.derived_from is not None:
                     raise exceptions.AppendToDerivedStreamNotAllowed
 
+            if datapoint['value'] is None:
+                fields = {'value_null': True}
+            else:
+                fields = {'value': self._validate_type(stream, datapoint['value'])}
+
             point = {
                 'measurement': stream.uuid,
-                'fields': {
-                    'value': self._validate_type(stream, datapoint['value']),
-                },
+                'fields': fields,
             }
 
             # Remove subsecond precision.
@@ -1521,6 +1525,7 @@ class Backend(object):
                 select.append((VALUE_DOWNSAMPLER_MAP[downsampler] % 'value') + ' AS %s' % downsampler)
         else:
             select.append('value')
+            select.append('value_null')
 
         if start is not None:
             add_condition('time', '>=', start)
