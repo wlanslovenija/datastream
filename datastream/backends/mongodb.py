@@ -2185,15 +2185,27 @@ class Backend(object):
 
         new_datapoints = []
 
-        streams = self._get_stream_queryset(query_tags).filter(value_downsamplers__not__size=0)
-        streams = streams.filter(latest_datapoint__ne=None)
-        for stream in streams:
-            if callable(filter_stream) and not filter_stream(stream):
-                continue
+        offset = 0
+        while True:
+            streams = self._get_stream_queryset(query_tags).filter(value_downsamplers__not__size=0)
+            streams = streams.filter(latest_datapoint__ne=None).order_by('pk').skip(offset)
+            try:
+                for stream in streams:
+                    offset += 1
+                    if callable(filter_stream) and not filter_stream(stream):
+                        continue
 
-            result = self._downsample_check(stream, until, return_datapoints)
-            if return_datapoints:
-                new_datapoints += result
+                    result = self._downsample_check(stream, until, return_datapoints)
+                    if return_datapoints:
+                        new_datapoints += result
+
+                break
+            except pymongo.errors.OperationFailure, e:
+                # Don't abort downsampling when it takes too long and the cursor times out.
+                if e.message.startswith('cursor id') and e.message.endswith('not valid at server'):
+                    continue
+
+                raise
 
         return new_datapoints
 
