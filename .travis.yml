@@ -14,7 +14,7 @@ addons:
   postgresql: "9.4"
 before_install:
  - docker run -d -p 27017:27017 -v /var/lib/tokumx --privileged=true wlanslovenija/tokumx
- - docker run -d -p 8086:8086 -v /data tutum/influxdb
+ - docker run -d -p 8086:8086 -v /var/lib/influxdb influxdb
 install:
  - pip install "mongoengine$MONGOENGINE_VERSION"
  - pip install "pymongo$PYMONGO_VERSION"
