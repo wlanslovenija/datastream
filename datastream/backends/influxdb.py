@@ -20,7 +20,8 @@ from .. import api, exceptions
 
 # 1 second larger than the UNIX epoch is required due to issue https://github.com/influxdb/influxdb/issues/2703.
 INFLUXDB_MINIMUM_TIMESTAMP = datetime.datetime(1970, 1, 1, 0, 0, 1, tzinfo=pytz.utc)
-INFLUXDB_MAXIMUM_TIMESTAMP = datetime.datetime(2255, 12, 9, 23, 13, 56, tzinfo=pytz.utc)
+# Upper bound due to issue https://github.com/influxdata/influxdb/issues/6740.
+INFLUXDB_MAXIMUM_TIMESTAMP = datetime.datetime(2049, 12, 9, 23, 13, 56, tzinfo=pytz.utc)
 
 GRANULARITY_MAP = {
     '10seconds': '10s',
