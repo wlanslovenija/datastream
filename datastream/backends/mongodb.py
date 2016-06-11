@@ -2195,17 +2195,20 @@ class Backend(object):
                     if callable(filter_stream) and not filter_stream(stream):
                         continue
 
-                    result = self._downsample_check(stream, until, return_datapoints)
+                    try:
+                        result = self._downsample_check(stream, until, return_datapoints)
+                    except:
+                        # Skip streams which fail with exceptions, but process all remaining streams. A
+                        # warning will already be logged by _downsample_check, so we don't need to do it here.
+                        continue
+
                     if return_datapoints:
                         new_datapoints += result
 
                 break
-            except pymongo.errors.OperationFailure, e:
+            except pymongo.errors.CursorNotFound:
                 # Don't abort downsampling when it takes too long and the cursor times out.
-                if e.message.startswith('cursor id') and e.message.endswith('not valid at server'):
-                    continue
-
-                raise
+                continue
 
         return new_datapoints
 
@@ -2350,7 +2353,6 @@ class Backend(object):
                     # because we want that only none or all datapoints for granularity periods are selected
                     '$lt': objectid.ObjectId.from_datetime(until_timestamp),
                 },
-
             })
         else:
             # All datapoints should be selected as we obviously haven't done any downsampling yet
@@ -2431,49 +2433,57 @@ class Backend(object):
         downsampled_points = getattr(db.datapoints, granularity.name)
         current_granularity_period_timestamp = None
         current_null_bucket = state.timestamp
-        for datapoint in datapoints.sort('_id', 1):
-            ts = datapoint['_id'].generation_time
-            new_granularity_period_timestamp = granularity.round_timestamp(ts)
-            if current_null_bucket is None:
-                # Current bucket obviously has a datapoint, so the next bucket is a candidate
-                # for being the first bucket that has no datapoints
-                current_null_bucket = granularity.round_timestamp(
-                    new_granularity_period_timestamp + datetime.timedelta(seconds=granularity.duration_in_seconds())
-                )
+        offset = 0
+        while True:
+            try:
+                for datapoint in datapoints.sort('_id', 1).skip(offset):
+                    offset += 1
+                    ts = datapoint['_id'].generation_time
+                    new_granularity_period_timestamp = granularity.round_timestamp(ts)
+                    if current_null_bucket is None:
+                        # Current bucket obviously has a datapoint, so the next bucket is a candidate
+                        # for being the first bucket that has no datapoints
+                        current_null_bucket = granularity.round_timestamp(
+                            new_granularity_period_timestamp + datetime.timedelta(seconds=granularity.duration_in_seconds())
+                        )
 
-            if current_granularity_period_timestamp is not None and \
-               current_granularity_period_timestamp != new_granularity_period_timestamp:
-                # All datapoints for current granularity period have been processed, we store the new datapoint
-                # This happens when interval ("datapoints" query) contains multiple not-yet-downsampled granularity periods
-                locked_until = store_downsampled_datapoint(current_granularity_period_timestamp, locked_until)
+                    if current_granularity_period_timestamp is not None and \
+                       current_granularity_period_timestamp != new_granularity_period_timestamp:
+                        # All datapoints for current granularity period have been processed, we store the new datapoint
+                        # This happens when interval ("datapoints" query) contains multiple not-yet-downsampled granularity periods
+                        locked_until = store_downsampled_datapoint(current_granularity_period_timestamp, locked_until)
 
-            current_granularity_period_timestamp = new_granularity_period_timestamp
+                    current_granularity_period_timestamp = new_granularity_period_timestamp
 
-            # Insert NULL values into empty buckets
-            while current_null_bucket < current_granularity_period_timestamp:
-                for x in value_downsamplers:
-                    x.update(middle_timestamp(current_null_bucket, granularity), None)
-                for x in time_downsamplers:
-                    x.update(middle_timestamp(current_null_bucket, granularity), None)
+                    # Insert NULL values into empty buckets
+                    while current_null_bucket < current_granularity_period_timestamp:
+                        for x in value_downsamplers:
+                            x.update(middle_timestamp(current_null_bucket, granularity), None)
+                        for x in time_downsamplers:
+                            x.update(middle_timestamp(current_null_bucket, granularity), None)
 
-                locked_until = store_downsampled_datapoint(current_null_bucket, locked_until)
+                        locked_until = store_downsampled_datapoint(current_null_bucket, locked_until)
 
-                # Move to next bucket
-                current_null_bucket = granularity.round_timestamp(
-                    current_null_bucket + datetime.timedelta(seconds=granularity.duration_in_seconds())
-                )
+                        # Move to next bucket
+                        current_null_bucket = granularity.round_timestamp(
+                            current_null_bucket + datetime.timedelta(seconds=granularity.duration_in_seconds())
+                        )
 
-            # Move to next candidate NULL bucket
-            current_null_bucket = granularity.round_timestamp(
-                current_granularity_period_timestamp + datetime.timedelta(seconds=granularity.duration_in_seconds())
-            )
+                    # Move to next candidate NULL bucket
+                    current_null_bucket = granularity.round_timestamp(
+                        current_granularity_period_timestamp + datetime.timedelta(seconds=granularity.duration_in_seconds())
+                    )
 
-            # Update all downsamplers for the current datapoint
-            ts = datapoint.get('t', datapoint['_id'].generation_time)
-            for x in value_downsamplers:
-                x.update(ts, datapoint['v'])
-            for x in time_downsamplers:
-                x.update(ts, datapoint['v'])
+                    # Update all downsamplers for the current datapoint
+                    ts = datapoint.get('t', datapoint['_id'].generation_time)
+                    for x in value_downsamplers:
+                        x.update(ts, datapoint['v'])
+                    for x in time_downsamplers:
+                        x.update(ts, datapoint['v'])
+
+                break
+            except pymongo.errors.CursorNotFound:
+                continue
 
         if current_granularity_period_timestamp is not None:
             locked_until = store_downsampled_datapoint(current_granularity_period_timestamp, locked_until)
