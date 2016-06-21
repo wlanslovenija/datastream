@@ -1224,10 +1224,10 @@ class Backend(object):
                 if stream.derived_from is not None:
                     raise exceptions.AppendToDerivedStreamNotAllowed
 
-            if datapoint['value'] is None:
+            fields = {'value': self._validate_type(stream, datapoint['value'])}
+            if fields['value'] is None:
+                del fields['value']
                 fields = {'value_null': True}
-            else:
-                fields = {'value': self._validate_type(stream, datapoint['value'])}
 
             point = {
                 'measurement': stream.uuid,
