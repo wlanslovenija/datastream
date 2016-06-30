@@ -1,4 +1,5 @@
 .*
+!.travis.yml
 *.pyc
 *.egg-info
 /build/
