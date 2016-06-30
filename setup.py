@@ -34,6 +34,7 @@ if __name__ == '__main__':
             'python-dateutil>=2.4.2',
             'psycopg2>=2.6.1',
             'influxdb>=2.10.0',
+            'backports.lzma>=0.0.6',
         ],
         tests_require=[
             'mongoengine>=0.8.1',

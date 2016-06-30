@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 
+import base64
 import collections
 import copy
 import datetime
@@ -15,6 +16,11 @@ import pytz
 import sys
 import uuid
 import warnings
+
+try:
+    import lzma
+except ImportError:
+    from backports import lzma
 
 from .. import api, exceptions
 
@@ -555,7 +561,12 @@ class Datapoints(ResultSetIteratorMixin, api.Datapoints):
         self.time_downsamplers = time_downsamplers
 
     def _deserialize_value(self, value):
-        if self._stream.value_type in ('graph', 'nominal'):
+        if self._stream.value_type == 'graph':
+            try:
+                return json.loads(lzma.decompress(base64.b64decode(value)))
+            except (ValueError, TypeError, lzma.LZMAError):
+                return json.loads(value)
+        elif self._stream.value_type == 'nominal':
             return json.loads(value)
 
         return value
@@ -1193,8 +1204,8 @@ class Backend(object):
                     except KeyError:
                         raise ValueError("Graph edges must contain destination vertex id under key 't'!")
 
-                # Serialize as JSON.
-                value = json.dumps(value)
+                # Serialize as Base64-encoded LZMA-compressed JSON.
+                value = base64.b64encode(lzma.compress(json.dumps(value)))
             else:
                 raise TypeError("Streams of type 'graph' may only accept dictionary datapoints!")
         else:
