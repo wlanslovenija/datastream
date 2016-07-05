@@ -477,7 +477,7 @@ class ResultSetIteratorMixin(object):
             # Batched operation.
             batch_offset = 0
             while True:
-                batch = self.no_batch()[batch_offset:self._batch]
+                batch = self.no_batch()[batch_offset:batch_offset + self._batch]
                 if not batch:
                     break
 
@@ -505,15 +505,18 @@ class ResultSetIteratorMixin(object):
                     if key.start is not None:
                         limit -= key.start
 
+                    assert limit >= 0
                     clone._query += ' LIMIT %d' % limit
 
                 if key.start is not None:
+                    assert key.start >= 0
                     clone._query += ' OFFSET %d' % key.start
 
             clone._evaluate()
             return clone
         elif isinstance(key, (int, long)):
             if clone._query is not None:
+                assert key >= 0
                 clone._query += ' LIMIT 1 OFFSET %d' % key
 
             clone._evaluate()

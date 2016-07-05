@@ -1527,6 +1527,34 @@ class CommonTestsMixin(object):
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts)
         self.assertEqual(len(data), 0)
 
+        # Test backprocessing of a lot of data, to trigger multiple batches.
+        streamA_id = self.datastream.ensure_stream({'name': 'batchA'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
+        streamB_id = self.datastream.ensure_stream({'name': 'batchB'}, {}, self.value_downsamplers, datastream.Granularity.Seconds)
+        stream_id = self.datastream.ensure_stream(
+            {'name': 'derived5'},
+            {},
+            self.value_downsamplers,
+            datastream.Granularity.Seconds,
+            derive_from=[
+                {'name': 'Stream A', 'stream': streamA_id},
+                {'name': 'Stream B', 'stream': streamB_id},
+            ],
+            derive_op='sum',
+        )
+
+        # TODO: Currently this test assumes batches are 1000 points. Make batch size detectable.
+        ts0 = datetime.datetime(2000, 1, 1, 12, 0, 0, tzinfo=pytz.utc)
+        for i in xrange(2000):
+            ts = ts0 + datetime.timedelta(seconds=i)
+            self.datastream.append(streamA_id, 1, ts)
+            self.datastream.append(streamB_id, 1, ts)
+
+        self.datastream.backprocess_streams()
+
+        data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds, start=ts0)
+        self.assertEqual(len(data), 2000)
+        self.assertEqual(sum((x['v'] for x in data)), 4000)
+
         # Test derived stream removal.
         with self.assertRaises(exceptions.OutstandingDependenciesError):
             self.datastream.delete_streams({'name': 'up'})
