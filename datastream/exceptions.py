@@ -136,6 +136,13 @@ class StreamAppendContended(DatastreamException):
     pass
 
 
+class StreamAppendFailed(DatastreamException):
+    """
+    Raised when a backend fails while inserting into a stream.
+    """
+    pass
+
+
 class DatastreamWarning(RuntimeWarning):
     """
     The base class for all datastream API runtime warnings.

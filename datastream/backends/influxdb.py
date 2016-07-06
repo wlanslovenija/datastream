@@ -1266,7 +1266,11 @@ class Backend(object):
             points.append(point)
 
         if points:
-            self._influxdb.write_points(points)
+            try:
+                self._influxdb.write_points(points)
+            except influxdb.exceptions.InfluxDBServerError:
+                raise exceptions.StreamAppendFailed
+
             self._backprocess_streams(stream_ids, grouped_datapoints)
 
     def append_multiple(self, datapoints):
