@@ -748,7 +748,7 @@ class Backend(object):
                     cursor.execute('CREATE INDEX dependencies_dst_stream ON datastream.dependencies (dst_stream)')
 
         # Ensure that the passed in database exists.
-        self._influxdb.query('CREATE DATABASE IF NOT EXISTS "%s"' % self._database)
+        self._influxdb.query('CREATE DATABASE "%s"' % self._database)
 
     def _get_where(self, query_tags):
         where = []
