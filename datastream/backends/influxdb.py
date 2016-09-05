@@ -785,7 +785,7 @@ class Backend(object):
 
         with self._metadata:
             with self._metadata.cursor() as cursor:
-                cursor.execute('SELECT * FROM datastream.streams WHERE tags @> %s LIMIT 1', (PostgresJson(query_tags),))
+                cursor.execute('SELECT * FROM datastream.streams WHERE tags @> %s', (PostgresJson(query_tags),))
                 stream = cursor.fetchone()
 
                 if stream is not None:
