@@ -797,25 +797,27 @@ class Backend(object):
                     # Enforce metadata change constraints.
                     if value_type != stream.value_type:
                         raise exceptions.InconsistentStreamConfiguration(
-                            "You cannot change a stream's value type"
+                            "You cannot change a stream's value type (stream %s)" % stream.uuid
                         )
 
                     if value_type_options != stream.value_type_options:
                         raise exceptions.InconsistentStreamConfiguration(
-                            "You cannot change a stream's value type options"
+                            "You cannot change a stream's value type options (stream %s)" % stream.uuid
                         )
 
                     # If a stream already exists and the derive inputs and/or operator have changed,
                     # we raise an exception.
                     if (derive_from and not stream.derived_from) or (not derive_from and stream.derived_from):
                         raise exceptions.InconsistentStreamConfiguration(
-                            "You cannot change a derived stream into a non-derived one or vice-versa"
+                            "You cannot change a derived stream into a non-derived one or vice-versa (stream %s)" % stream.uuid
                         )
 
                     if derive_from:
                         if derive_op != stream.derived_from['op']:
                             raise exceptions.InconsistentStreamConfiguration(
-                                "You cannot modify a derived stream's operator from '%s' to '%s'" % (stream.derived_from['op'], derive_op)
+                                "You cannot modify a derived stream's operator from '%s' to '%s' (stream %s)" % (
+                                    stream.derived_from['op'], derive_op, stream.uuid
+                                )
                             )
 
                         existing_src_streams = [descriptor['stream'] for descriptor in stream.derived_from['streams']]
@@ -828,7 +830,7 @@ class Backend(object):
 
                         if src_streams != existing_src_streams:
                             raise exceptions.InconsistentStreamConfiguration(
-                                "You cannot modify a derived stream's input streams"
+                                "You cannot modify a derived stream's input streams (stream %s)" % stream.uuid
                             )
 
                     if stream.tags != old_tags:
