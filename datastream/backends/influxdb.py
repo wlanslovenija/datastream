@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 
 import base64
+import cachetools
 import collections
 import copy
 import datetime
@@ -679,7 +680,7 @@ class Backend(object):
         :param connection_metadata: PostgreSQL metadata store connection parameters
         """
 
-        self._streams = {}
+        self._streams = cachetools.LRUCache(maxsize=128)
         self._connection = {
             'influxdb': connection_influxdb,
             'metadata': connection_metadata,
@@ -1094,7 +1095,7 @@ class Backend(object):
             with self._metadata.cursor() as cursor:
                 if query_tags is None:
                     cursor.execute('TRUNCATE datastream.streams CASCADE')
-                    self._streams = {}
+                    self._streams.clear()
 
                     for series in self._influxdb.get_list_series():
                         try:

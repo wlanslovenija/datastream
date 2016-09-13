@@ -35,6 +35,7 @@ if __name__ == '__main__':
             'psycopg2>=2.6.1',
             'influxdb>=2.10.0',
             'backports.lzma>=0.0.6',
+            'cachetools>=1.1.6',
         ],
         tests_require=[
             'mongoengine>=0.8.1',
