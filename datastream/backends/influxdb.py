@@ -717,7 +717,12 @@ class Backend(object):
         # Ensure that the metadata storage table exists.
         with self._metadata:
             with self._metadata.cursor() as cursor:
-                cursor.execute('CREATE SCHEMA IF NOT EXISTS datastream')
+                try:
+                    cursor.execute('CREATE SCHEMA IF NOT EXISTS datastream')
+                except psycopg2.IntegrityError:
+                    # Ignore an integrity error while creating the datastream schema. This may
+                    # happen when the schema is created concurrently.
+                    pass
 
                 # Streams table.
                 cursor.execute('''CREATE TABLE IF NOT EXISTS datastream.streams (
