@@ -39,6 +39,8 @@ class CommonTestsMixin(object):
         # Test multi tag query.
         other_stream_id = self.datastream.ensure_stream({'name': 'foobar', 'andmore': 'wrong'}, tags, self.value_downsamplers, datastream.Granularity.Seconds)
         self.assertNotEqual(stream_id, other_stream_id)
+        with self.assertRaises(exceptions.MultipleStreamsReturned):
+            self.datastream.ensure_stream(query_tags, tags, self.value_downsamplers, datastream.Granularity.Seconds)
         self.datastream.delete_streams({'name': 'foobar', 'andmore': 'wrong'})
 
         # Test stream tag manipulation.
