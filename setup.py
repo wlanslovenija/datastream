@@ -28,22 +28,29 @@ if __name__ == '__main__':
         include_package_data=True,
         zip_safe=False,
         install_requires=[
+            'pytz>=2012h',
+        ],
+        extras_require={
+            'mongodb': [
+                'mongoengine>=0.8.1',
+                'pymongo>=2.7.1,<3.0.0',
+            ],
+            'influxdb': [
+                'python-dateutil>=2.4.2',
+                'psycopg2>=2.6.1',
+                'influxdb>=2.10.0',
+                'backports.lzma>=0.0.6',
+                'cachetools>=1.1.6',
+            ],
+        },
+        tests_require=[
             'mongoengine>=0.8.1',
             'pymongo>=2.7.1,<3.0.0',
-            'pytz>=2012h',
             'python-dateutil>=2.4.2',
             'psycopg2>=2.6.1',
             'influxdb>=2.10.0',
             'backports.lzma>=0.0.6',
             'cachetools>=1.1.6',
-        ],
-        tests_require=[
-            'mongoengine>=0.8.1',
-            'pymongo>=2.7.1,<3.0.0',
-            'pytz>=2012h',
-            'python-dateutil>=2.4.2',
-            'psycopg2>=2.6.1',
-            'influxdb>=2.10.0',
         ],
         test_suite='tests',
     )
