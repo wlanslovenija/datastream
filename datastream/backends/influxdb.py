@@ -1277,9 +1277,12 @@ class Backend(object):
 
         if points:
             try:
-                self._influxdb.write_points(points)
-            except influxdb.exceptions.InfluxDBServerError:
-                raise exceptions.StreamAppendFailed
+                self._influxdb.write_points(
+                    points=points,
+                    batch_size=1000,
+                )
+            except influxdb.exceptions.InfluxDBServerError as error:
+                raise exceptions.StreamAppendFailed(error.content)
 
             self._backprocess_streams(stream_ids, grouped_datapoints)
 
