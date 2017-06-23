@@ -1282,7 +1282,7 @@ class Backend(object):
                     batch_size=1000,
                 )
             except influxdb.exceptions.InfluxDBServerError as error:
-                raise exceptions.StreamAppendFailed(error.content)
+                raise exceptions.StreamAppendFailed(*error.args)
 
             self._backprocess_streams(stream_ids, grouped_datapoints)
 
