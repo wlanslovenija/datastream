@@ -614,7 +614,7 @@ class Datapoints(ResultSetIteratorMixin, api.Datapoints):
 
 
 class StreamDescriptor(object):
-    def __init__(self, uuid, tags, pending_backprocess=False):
+    def __init__(self, uuid, tags, pending_backprocess=False, latest_datapoint=None, earliest_datapoint=None):
         tags = copy.deepcopy(tags)
         self.uuid = str(uuid)
         self.value_downsamplers = tags.pop('value_downsamplers')
@@ -623,6 +623,8 @@ class StreamDescriptor(object):
         self.value_type_options = tags.pop('value_type_options')
         self.derived_from = tags.pop('derived_from', None)
         self.derive_state = tags.pop('derive_state', {})
+        self.earliest_datapoint = earliest_datapoint
+        self.latest_datapoint = latest_datapoint
         self.pending_backprocess = pending_backprocess
         self.tags = tags
 
@@ -643,6 +645,8 @@ class StreamDescriptor(object):
             'highest_granularity': self.highest_granularity.__name__,
             'value_type': self.value_type,
             'value_type_options': self.value_type_options,
+            'earliest_datapoint': self.earliest_datapoint,
+            'latest_datapoint': self.latest_datapoint,
             'derived_from': derived_from,
         }
         tags.update(copy.deepcopy(self.tags))
@@ -730,6 +734,16 @@ class Backend(object):
                     tags jsonb,
                     pending_backprocess boolean NOT NULL DEFAULT false
                 )''')
+
+                try:
+                    cursor.execute('SAVEPOINT add_timestamp_columns')
+                    cursor.execute('''ALTER TABLE datastream.streams
+                        ADD COLUMN latest_datapoint timestamp NULL,
+                        ADD COLUMN earliest_datapoint timestamp NULL
+                    ''')
+                except psycopg2.Error:
+                    # Ignore error when columns already exist. We need to support PostgreSQL <= 9.5.
+                    cursor.execute('ROLLBACK TO SAVEPOINT add_timestamp_columns')
 
                 # Create a GIN index if one doesn't yet exist.
                 cursor.execute('SELECT to_regclass(\'datastream.streams_tags\')')
@@ -915,7 +929,9 @@ class Backend(object):
                         }
 
                     # Create the stream.
-                    cursor.execute('INSERT INTO datastream.streams VALUES(%(id)s, %(tags)s, %(pending_backprocess)s)', {
+                    cursor.execute('''INSERT INTO datastream.streams(id, tags, pending_backprocess)
+                        VALUES(%(id)s, %(tags)s, %(pending_backprocess)s)
+                    ''', {
                         'id': stream.uuid,
                         'tags': PostgresJson(stream.get_tags()),
                         'pending_backprocess': stream.pending_backprocess,
@@ -961,16 +977,6 @@ class Backend(object):
                 raise exceptions.StreamNotFound
 
     def _get_tags(self, stream):
-        try:
-            earliest_datapoint = self.get_data(stream.uuid, stream.highest_granularity)[0]['t']
-        except IndexError:
-            earliest_datapoint = None
-
-        try:
-            latest_datapoint = self.get_data(stream.uuid, stream.highest_granularity, reverse=True)[0]['t']
-        except IndexError:
-            latest_datapoint = None
-
         tags = copy.deepcopy(stream.tags)
         tags.update({
             'stream_id': stream.uuid,
@@ -978,8 +984,8 @@ class Backend(object):
             'time_downsamplers': ['mean'],
             'highest_granularity': stream.highest_granularity,
             'pending_backprocess': stream.pending_backprocess,
-            'earliest_datapoint': earliest_datapoint,
-            'latest_datapoint': latest_datapoint,
+            'earliest_datapoint': stream.earliest_datapoint,
+            'latest_datapoint': stream.latest_datapoint,
             'value_type': stream.value_type,
             'value_type_options': stream.value_type_options,
         })
@@ -1238,6 +1244,7 @@ class Backend(object):
         stream_ids = []
         points = []
         grouped_datapoints = {}
+        timestamps = {}
         now = datetime.datetime.now(pytz.utc)
         for datapoint in datapoints:
             stream = self._get_stream(datapoint['stream_id'])
@@ -1268,12 +1275,49 @@ class Backend(object):
 
             point['time'] = timestamp.replace(microsecond=0)
 
+            timestamps[stream.uuid] = {
+                'latest': max(point['time'], timestamps.get(stream.uuid, {}).get('latest', INFLUXDB_MINIMUM_TIMESTAMP)),
+                'earliest': min(point['time'], timestamps.get(stream.uuid, {}).get('earliest', INFLUXDB_MAXIMUM_TIMESTAMP)),
+                'stream': stream,
+            }
+
             grouped_datapoints.setdefault(stream.uuid, []).append({
                 'v': datapoint['value'],
                 't': point['time'],
             })
 
             points.append(point)
+
+        with self._metadata:
+            streams = self._metadata.cursor()
+
+            # Update timestamp for each stream.
+            for stream_id, ts in timestamps.items():
+                stream = ts['stream']
+                query = 'latest_datapoint = greatest(%(latest_datapoint)s, latest_datapoint)'
+                query_kwargs = {
+                    'id': stream_id,
+                    'latest_datapoint': ts['latest'],
+                }
+                stream.latest_datapoint = query_kwargs['latest_datapoint']
+
+                # Update earliest datapoint if not set.
+                if stream.earliest_datapoint is None:
+                    query += ', earliest_datapoint = least(%(earliest_datapoint)s, earliest_datapoint)'
+                    try:
+                        # This is required for legacy streams without earliest_datapoint metadata.
+                        query_kwargs['earliest_datapoint'] = self.get_data(
+                            stream_id, stream.highest_granularity
+                        )[0]['t']
+                    except IndexError:
+                        query_kwargs['earliest_datapoint'] = ts['earliest']
+
+                    stream.earliest_datapoint = query_kwargs['earliest_datapoint']
+
+                streams.execute(
+                    'UPDATE datastream.streams SET %s WHERE id = %%(id)s' % query,
+                    query_kwargs
+                )
 
         if points:
             try:
@@ -1540,11 +1584,17 @@ class Backend(object):
             try:
                 if start is None and start_exclusive is None:
                     # Set to earliest datapoint.
-                    start = self.get_data(stream_id, stream.highest_granularity)[0]['t']
+                    start = stream.earliest_datapoint
+                    if start is None:
+                        # This is required for legacy streams without earliest_datapoint metadata.
+                        start = self.get_data(stream_id, stream.highest_granularity)[0]['t']
 
                 if end is None and end_exclusive is None:
                     # Set to latest datapoint.
-                    end = self.get_data(stream_id, stream.highest_granularity, reverse=True)[0]['t']
+                    end = stream.latest_datapoint
+                    if end is None:
+                        # This is required for legacy streams without earliest_datapoint metadata.
+                        end = self.get_data(stream_id, stream.highest_granularity, reverse=True)[0]['t']
             except IndexError:
                 return Datapoints(self, stream, None, [], [])
 
