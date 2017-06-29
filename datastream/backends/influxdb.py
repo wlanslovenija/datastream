@@ -722,11 +722,14 @@ class Backend(object):
         with self._metadata:
             with self._metadata.cursor() as cursor:
                 try:
+                    cursor.execute('SAVEPOINT create_schema')
                     cursor.execute('CREATE SCHEMA IF NOT EXISTS datastream')
                 except psycopg2.IntegrityError:
                     # Ignore an integrity error while creating the datastream schema. This may
-                    # happen when the schema is created concurrently.
-                    pass
+                    # happen when the schema is created concurrently. We need to perform a rollback
+                    # as otherwise the transaction will be aborted and all further commands will
+                    # fail.
+                    cursor.execute('ROLLBACK TO SAVEPOINT create_schema')
 
                 # Streams table.
                 cursor.execute('''CREATE TABLE IF NOT EXISTS datastream.streams (
