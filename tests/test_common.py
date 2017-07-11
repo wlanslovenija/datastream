@@ -326,6 +326,57 @@ class CommonTestsMixin(object):
         with self.assertRaises(exceptions.StreamNotFound):
             self.datastream.get_data(stream_id, datastream.Granularity.Minutes, datetime.datetime.utcfromtimestamp(0))
 
+    def test_count_limit_offset(self):
+        stream_id = self.datastream.ensure_stream(
+            {'name': 'foo'},
+            {},
+            self.value_downsamplers,
+            datastream.Granularity.Seconds
+        )
+
+        points = []
+        ts = datetime.datetime(2000, 1, 1, 12, 0, 0)
+        start_timestamp = ts
+        for i in xrange(200):
+            points.append({
+                'stream_id': stream_id,
+                'value': i,
+                'timestamp': ts,
+            })
+            ts += datetime.timedelta(seconds=1)
+
+        self.datastream.append_multiple(points)
+
+        data = self.datastream.get_data(
+            stream_id,
+            datastream.Granularity.Seconds,
+            start_timestamp,
+            ts
+        )
+
+        self.assertEqual(len(data), 200)
+        self.assertEqual(len(data[:20]), 20)
+        self.assertEqual(len(data[50:70]), 20)
+        self.assertEqual(len(data[190:210]), 10)
+
+        with self.time_offset():
+            self.datastream.downsample_streams()
+
+        data = self.datastream.get_data(
+            stream_id,
+            datastream.Granularity.Seconds10,
+            start_timestamp,
+            ts
+        )
+
+        if self.datastream.backend.requires_downsampling:
+            self.assertEqual(len(data), 19)
+        else:
+            self.assertEqual(len(data), 20)
+
+        self.assertEqual(len(data[:10]), 10)
+        self.assertEqual(len(data[5:15]), 10)
+
     def test_granularities(self):
         query_tags = {
             'name': 'foodata',
@@ -987,7 +1038,7 @@ class CommonTestsMixin(object):
             end_timestamp = None
 
         data = self.datastream.get_data(stream_id, self.datastream.Granularity.Seconds10, start=start_timestamp, end_exclusive=end_timestamp)
-        self.assertEqual(len(data), 17280)
+        self.assertEqual(len(list(data)), 17280)
         self._test_data_types(data)
 
         self.datastream.append(stream_id, 1, datetime.datetime(2000, 1, 3, 12, 0, 0))
