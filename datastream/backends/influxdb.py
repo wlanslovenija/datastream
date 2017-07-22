@@ -579,7 +579,9 @@ class ResultSetIteratorMixin(object):
         if isinstance(results, dict):
             result_keys = results.keys()
             if 'count_value' in result_keys:
-                return results.get('count_value', 0) + results.get('count_value_null', 0)
+                count_value = results.get('count_value', 0) or 0
+                count_value_null = results.get('count_value_null', 0) or 0
+                return count_value + count_value_null
             else:
                 return max([results[key] for key in results.keys() if key.startswith('count')])
         elif isinstance(results, tuple):
