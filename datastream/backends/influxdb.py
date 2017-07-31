@@ -870,6 +870,13 @@ class Backend(object):
                     pending_backprocess boolean NOT NULL DEFAULT false
                 )''')
 
+                # Schema version.
+                cursor.execute("SELECT obj_description('datastream.streams'::regclass, 'pg_class')")
+                try:
+                    streams_version = int(cursor.fetchone()[0])
+                except TypeError:
+                    streams_version = 0
+
                 try:
                     cursor.execute('SAVEPOINT add_timestamp_columns')
                     cursor.execute('''ALTER TABLE datastream.streams
@@ -879,6 +886,18 @@ class Backend(object):
                 except psycopg2.Error:
                     # Ignore error when columns already exist. We need to support PostgreSQL <= 9.5.
                     cursor.execute('ROLLBACK TO SAVEPOINT add_timestamp_columns')
+
+                # Migration v1: use explicit timestamp with time zone columns.
+                if streams_version <= 0:
+                    cursor.execute('''ALTER TABLE datastream.streams
+                        ALTER COLUMN latest_datapoint TYPE timestamp with time zone
+                            USING latest_datapoint AT TIME ZONE 'UTC',
+                        ALTER COLUMN earliest_datapoint TYPE timestamp with time zone
+                            USING earliest_datapoint AT TIME ZONE 'UTC'
+                    ''')
+
+                    # Bump version.
+                    cursor.execute("COMMENT ON TABLE datastream.streams IS '1'")
 
                 # Create a GIN index if one doesn't yet exist.
                 cursor.execute('SELECT to_regclass(\'datastream.streams_tags\')')
